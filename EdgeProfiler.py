@@ -37,19 +37,16 @@ def calcEdgeFeatures( src_img ):
     "passings"    : []
   }
   
-  # 1: ENDPOINTS, 2: BRANCHES: 3: PASSINGS
-  img_categorized = np.zeros( (src_img.shape[0], src_img.shape[1]), dtype=np.uint8)
-  
   # 1st-Phase: 「端点」「分岐点」「通過点」の計算
   if D_LOGGING:
     print( "----- PASS 1 -----" )
-  pass1( edge_img, features, img_categorized )
+  pass1( edge_img, features )
   
   # 2nd-Phase: 「エッジ長」の計算
   if D_LOGGING:
     print( "----- PASS 3 -----" )
   if len( features['passings'] ) != 0:
-    pass3( features, img_categorized )
+    pass3( features, edge_img )
   
   # 3rd-Phase: エッジ分散値の計算
   # features['angle_variance'] = getEdgeAngleVariance( src_img )
@@ -89,19 +86,18 @@ def isMatched( img_roi, array_profile ):
 
 # FIXED (2017/11/08): 再帰トラッキング→テンプレートマッチングに変更
 # FIXED (2018/01/26): すべてテンプレートマッチングにより分類
-def pass1( img, features, img_categorized ):
-  assert (img.shape[0] == img_categorized.shape[0] and img.shape[1] == img_categorized.shape[1]), "must be same shape !"
+def pass1( img, features ):
   K_SIZE = 3
   # 端点を検出するためのテンプレート
-  TEMP_ENDP = [np.array( [[0, 0, 0], [0, 1, 0], [0, 0, 0]], dtype=np.int8 ),
+  TEMP_ENDP = [np.array( [[0, 0, 0], [0, 1, 0], [0, 0, 0]],   dtype=np.int8 ),
                np.array( [[0, 0, 0], [0, 1, 0], [-1, 1, -1]], dtype=np.int8 ),
-               np.array( [[0, 0, 0], [0, 1, 0], [1, 0, 0]], dtype=np.int8 ),
+               np.array( [[0, 0, 0], [0, 1, 0], [1, 0, 0]],   dtype=np.int8 ),
                ]
   # 分岐点を検出するためのテンプレート
-  TEMP_BRNC = [np.array( [[-1, 1, -1], [1, 1, 1], [0, 0, 0]], dtype=np.int8 ),
-               np.array( [[1, 0, 0], [0, 1, 0], [1, 0, 1]], dtype=np.int8 ),
+  TEMP_BRNC = [np.array( [[-1, 1, -1], [1, 1, 1], [0, 0, 0]],   dtype=np.int8 ),
+               np.array( [[1, 0, 0], [0, 1, 0], [1, 0, 1]],     dtype=np.int8 ),
                np.array( [[-1, 1, -1], [1, 1, 1], [-1, 1, -1]], dtype=np.int8 ),
-               np.array( [[1, 0, 1], [0, 1, 0], [1, 0, 1]], dtype=np.int8 )
+               np.array( [[1, 0, 1], [0, 1, 0], [1, 0, 1]],     dtype=np.int8 )
                ]
   
   # FIX(2018/02/13): Init
@@ -127,7 +123,11 @@ def pass1( img, features, img_categorized ):
       if (x != 255):
         continue
     
-      img_roi = cp.getROI( img, j, i, 3 )
+      img_roi = np.zeros( (K_SIZE, K_SIZE), dtype=img.dtype )
+      for (m, p) in zip( range( K_SIZE ), range( -(K_SIZE // 2), (K_SIZE // 2) + 1 ) ):
+        for (n, q) in zip( range( K_SIZE ), range( -(K_SIZE // 2), (K_SIZE // 2) + 1 ) ):
+          if (0 <= i + p < img.shape[0] and 0 <= j + q < img.shape[1]):
+            img_roi[m, n] = img[i + p, j + q]
     
       features['total_length'] += 1
     
@@ -138,11 +138,6 @@ def pass1( img, features, img_categorized ):
         for edgeTemp in v:
           if isMatched( img_roi, edgeTemp ):
             features[k].append( [i, j] )
-            # 1: ENDPOINTS, 2: BRANCHES: 3: PASSINGS
-            if (k == 'endpoints'):
-              img_categorized[i, j] = 1
-            else:
-              img_categorized[i, j] = 2
             isClassified = True
             if (D_DEBUG_1):
               print( "Classified! --> (%3d, %3d) at '%s'" % (j, i, k), flush=True )
@@ -150,41 +145,89 @@ def pass1( img, features, img_categorized ):
       # マッチしなかったエッジ画素 →「通過点」
       if not isClassified:
         features['passings'].append( [i, j] )
-        # 1: ENDPOINTS, 2: BRANCHES: 3: PASSINGS
-        img_categorized[i, j] = 3
         if (D_DEBUG_1):
           print( "Classified! --> (%3d, %3d) at '%s'" % (j, i, 'passings'), flush=True )
   
-  return
+  
+  
+  return features
 
 
 # エッジ線検出
 # 'length_average' の計算
-# FIXED(2018/02/13): cv2.connectedComponentsを使った形式に
-def pass3( features, img_categorized ):
+def pass3( features, img ):
+  isNoMorePassings = True
+  NEIGHBOR = np.array( [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)] )
+  passings = copy.deepcopy( features['passings'] )
+  checked = []
   
-  # Img modify
-  # 1: ENDPOINTS, 2: BRANCHES: 3: PASSINGS
-  img = (img_categorized / 3).astype(np.uint8)*255
+  # for DEBUG
+  if D_DEBUG_PASS2:
+    D_RESULT = []
+    D_TMP_ARRAY = []
   
-  # Labeling
-  nLabels, labelImg = cv2.connectedComponents(img)
+  # INIT PARAMS
+  length = 1
+  total_length = 0
+  n_of_edge = 0
+  p = np.array( passings[0] )
   
-  features['length_average'] = np.count_nonzero(img) / nLabels
+  ### MAIN ROUTINE ###
+  if (D_DEBUG_3):
+    print( " start !! (%d, % d)" % (p[1], p[0]) )
+  while (len( passings ) > 0):
+    isNoMorePassings = True
+    passings.remove( p.tolist() )
+    checked.append( p.tolist() )
+
+    if D_LOGGING:
+      print( f"PASS 3 - {len(passings)} left." )
+    
+    if D_DEBUG_PASS2:
+      D_TMP_ARRAY.append( (p[0], p[1]) )
+    
+    for n in NEIGHBOR:
+      P = p + n
+      if (P.tolist() in passings and not P.tolist() in checked):
+        if (D_DEBUG_3):
+          print( " found !! (%d, %d)" % (P[1], P[0]) )
+        length += 1
+        p = P
+        isNoMorePassings = False
+        break
+    
+    if (isNoMorePassings):
+      total_length += length
+      n_of_edge += 1
+      if (D_DEBUG_3):
+        print( " not found !!" )
+        print( "length = %d, n_of_edge = %d, total_length = %d" % (length, n_of_edge, total_length) )
+        if (D_DEBUG_PASS2):
+          print( "list: ", D_TMP_ARRAY )
+      if D_DEBUG_PASS2:
+        D_RESULT.append( D_TMP_ARRAY )
+        D_TMP_ARRAY = []
+      if (len( passings ) > 0):
+        p = np.array( passings[0] )
+        if (D_DEBUG_3):
+          print( " start !! (%d, %d)" % (p[1], p[0]) )
+        length = 1
   
+  features['length_average'] = total_length / n_of_edge
+  
+  # create debug image
   if (D_DEBUG_PASS2):
     D_IMG = np.zeros( (img.shape[0], img.shape[1], 3), dtype=np.uint8 )
-
-    COL = [ [0,0,0] ]
-    COL += [ [rnd.randint( 64, 255 ), rnd.randint( 64, 255 ), rnd.randint( 64, 255 )] for _ in range(nLabels) ]
     
-    for i in range(D_IMG.shape[0]):
-      for j in range(D_IMG.shape[1]):
-        D_IMG[i, j] = COL[labelImg[i, j]]
-  
+    for list_coord in D_RESULT:
+      COL = [rnd.randint( 64, 255 ), rnd.randint( 64, 255 ), rnd.randint( 64, 255 )]
+      for p in list_coord:
+        D_IMG[p[0], p[1]] = COL
+    
     cv2.imshow( "DEBUG_2", D_IMG )
-    cv2.waitKey( 0 )
+    cv2.waitKey( 500 )
     cv2.imwrite( "img/DEBUG2_" + str( uuid.uuid4() ) + ".png", D_IMG )
+  
   return
 
 
@@ -420,6 +463,7 @@ def proc6( src_img_path, wnd_size, feature_name ):
   img = sr.createOverwrappedImage( src_img, img_value )
   cv2.imshow( "Test", img )
   cv2.waitKey( 0 )
+
 
 
 if __name__ == '__main__':
