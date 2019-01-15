@@ -2,7 +2,9 @@
 # Edit at https://www.gitignore.io/?templates=python,opencv,pycharm,jupyternotebook,jupyternotebooks
 
 ### Project Files ###
+data
 data/
+img
 img/
 
 ### JupyterNotebook ###
