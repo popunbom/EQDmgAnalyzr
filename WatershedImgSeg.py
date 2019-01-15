@@ -4,11 +4,14 @@
 # REF: https://qiita.com/ysdyt/items/5972c9520acf6a094d90
 
 import os
+from datetime import datetime
 import cv2
 import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+DIR_TMP_ROOT = 'img/tmp/watershed/' + datetime.now().strftime("%Y%m%d_%H%M%S")
+D_SAVE_TMP_IMAGES = True
 
 def equalizeHist(img, mode='hsv'):
     """
@@ -20,7 +23,7 @@ def equalizeHist(img, mode='hsv'):
         入力画像データ。画像はグレースケールまたは RGB カラー画像である必要がある。
     mode : str
         動作切り替え用のパラメータ。デフォルト値は 'hsv'。
-        mode='hsv' のとき、HSV色空間の各チャンネルに対してヒストグラム平坦化を行う
+        mode='hsv' のとき、HSV色空間の V チャンネルに対してヒストグラム平坦化を行う
         mode='rgb' のとき、RGB色空間の各チャンネルに対してヒストグラム平坦化を行う
     
     Returns
@@ -38,9 +41,8 @@ def equalizeHist(img, mode='hsv'):
         return cv2.equalizeHist(img)
     else:
         if mode == 'hsv':
-            import pdb
-            pdb.set_trace()
             img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            # V チャンネルのみを対象にする
             img[:, :, 2] = cv2.equalizeHist(img[:, :, 2])
             img = cv2.cvtColor(img, cv2.COLOR_HSV2BGR)
 
@@ -142,53 +144,75 @@ def showImages(list_img, plt_title=None, list_title=None, list_cmap=None, tuple_
 
 def watershed(img_path):
     img = cv2.imread(img_path, cv2.IMREAD_COLOR)
-    # img = equalizeHist(img)
+    # img = equalizeHist(img, mode='rgb')
+    img = cv2.medianBlur(img, 3)
     img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
+    if D_SAVE_TMP_IMAGES:
+        base_name = os.path.splitext( os.path.basename( img_path ) )[0]
+    
+    
     thresh, img_bin = cv2.threshold(img_gs, 0, 255, cv2.THRESH_OTSU)
+    # thresh, img_bin = 0, cv2.adaptiveThreshold(img_gs, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 17, 1)
     if np.sum(img_bin == 0) > np.sum(img_bin == 255):
         img_bin = cv2.bitwise_not(img_bin)
-
-    # thresh, img_bin = 0, cv2.adaptiveThreshold(img_gs, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 17, 1)
-
-    # import pdb; pdb.set_trace()
-
+    
+    if D_SAVE_TMP_IMAGES:
+        # import pdb; pdb.set_trace()
+        cv2.imwrite(os.path.join(DIR_TMP_ROOT, base_name+"_1_bin.png"), img_bin)
+    
     print(f"Threshold: {thresh}")
-
+    
     kernel = np.array([
         [1, 1, 1],
         [1, 0, 1],
         [1, 1, 1]
     ], dtype=np.uint8)
-
+    
     img_morph = img_bin
     img_morph = cv2.morphologyEx(
         img_morph, cv2.MORPH_CLOSE, kernel, iterations=1)
     img_morph = cv2.morphologyEx(
         img_morph, cv2.MORPH_OPEN, kernel, iterations=1)
-
-    sure_bg = img_morph
-
+    
+    if D_SAVE_TMP_IMAGES:
+        cv2.imwrite(os.path.join(DIR_TMP_ROOT, base_name+"_2_denoise.png"), img_morph)
+    
+    sure_bg = cv2.dilate(img_morph, kernel, iterations=1)
+    
+    if D_SAVE_TMP_IMAGES:
+        cv2.imwrite(os.path.join(DIR_TMP_ROOT, base_name+"_3_sure_bg.png"), sure_bg)
+    
     dist_transform = cv2.distanceTransform(img_morph, cv2.DIST_L2, 5)
+
+    if D_SAVE_TMP_IMAGES:
+        cv2.imwrite( os.path.join( DIR_TMP_ROOT, base_name+"_4_distance.png" ), (dist_transform / dist_transform.max() * 255.0).astype(np.uint8) )
 
     thresh, sure_fg = cv2.threshold(
         dist_transform, 0.5 * dist_transform.max(), 255, 0)
     # print(f"Threshold(Sure Foreground): {thresh}")
-
+    
     sure_fg = sure_fg.astype(np.uint8)
-    unknown = cv2.subtract(sure_bg, sure_fg)
 
+    if D_SAVE_TMP_IMAGES:
+        cv2.imwrite( os.path.join( DIR_TMP_ROOT, base_name+"_5_sure_fg.png" ), sure_fg )
+
+    unknown = cv2.subtract(sure_bg, sure_fg)
+    
+    if D_SAVE_TMP_IMAGES:
+        cv2.imwrite( os.path.join( DIR_TMP_ROOT, base_name+"_6_unknown.png" ), unknown )
+    
     showImages([img_gs, img_bin, img_morph, dist_transform, sure_fg, unknown],
                list_title=["Grayscale", "Binary", "Morph",
                            "Distance", "Foreground", "Unknown"],
+               list_cmap=['gray', 'gray', 'gray', 'rainbow', 'gray', 'gray'],
                plt_title=os.path.basename(img_path))
     ret, markers = cv2.connectedComponents(sure_fg)
     markers += 1
-
+    
     markers[unknown == 255] = 0
-
+    
     # imshow(markers, _cmap='terrain')
-
+    
     markers = cv2.watershed(img, markers)
     # imshow(markers, _cmap='rainbow')
     showImages([img, img_bin, markers],
@@ -200,7 +224,10 @@ def watershed(img_path):
 
 
 if __name__ == '__main__':
+    if D_SAVE_TMP_IMAGES:
+        if not os.path.exists(DIR_TMP_ROOT):
+            os.mkdir(DIR_TMP_ROOT)
+    
     for i in range(100):
         watershed(f"img/divided/aerial_roi1/{i:05d}.png")
-        showImages()
     # watershed("/Users/popunbom/Google Drive/IDE_Projects/PyCharm/DmgAnalyzr/img/resource/aerial_blur_roi1.png")
