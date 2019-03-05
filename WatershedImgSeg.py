@@ -202,5 +202,4 @@ def watershed(img_path):
 if __name__ == '__main__':
     for i in range(100):
         watershed(f"img/divided/aerial_roi1/{i:05d}.png")
-        showImages()
     # watershed("/Users/popunbom/Google Drive/IDE_Projects/PyCharm/DmgAnalyzr/img/resource/aerial_blur_roi1.png")
