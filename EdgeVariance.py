@@ -38,7 +38,7 @@ result = np.zeros( tuple( ((s - BLOCK_SIZE) + 1) for s in img.shape ), dtype=np.
 # result = np.array([ np.array([ np.array([ G_roi[A_roi == d].sum() for d in range(N_OF_ANGLES)]).var() for A_roi, G_roi in zip(A_rois, G_rois) ]) for A_rois, G_rois in zip (A_roiss, G_roiss) ])
 # print("done!")
 
-# print(result)
+# print(result)q
 
 
 for y in range( 0, result.shape[0] ):
