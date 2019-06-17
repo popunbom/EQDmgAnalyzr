@@ -52,8 +52,7 @@ def imageDivideByMask( src_img, npy_label, dir_name ):
 
 
 def imgPreProc( src_img ):
-  
-  print("Image Pre-Processing ... ", flush=True, end="")
+  print( "Image Pre-Processing ... ", flush=True, end="" )
   hsv = cv2.split( cv2.cvtColor( src_img, cv2.COLOR_BGR2HSV ) )
   
   # Hue, Saturation: Median( r = 5.0 )
@@ -64,32 +63,35 @@ def imgPreProc( src_img ):
   hsv[2] = cv2.pyrMeanShiftFiltering( hsv[2], 8, 18 )
   hsv[2] = cv2.cvtColor( hsv[2], cv2.COLOR_BGR2GRAY )
   
-  print("done! ", flush=True)
+  print( "done! ", flush=True )
   
   return cv2.cvtColor( cv2.merge( hsv ), cv2.COLOR_HSV2BGR )
 
-def getROI( img, center_x, center_y, kSize):
-  x = center_x; y = center_y
-  assert( kSize % 2 != 0), "kSize is an odd number !"
 
-  if len(img.shape) == 2:
-    ret = np.zeros( (kSize, kSize), dtype=img.dtype)
+def getROI( img, center_x, center_y, kSize ):
+  x = center_x;
+  y = center_y
+  assert (kSize % 2 != 0), "kSize is an odd number !"
+  
+  if len( img.shape ) == 2:
+    ret = np.zeros( (kSize, kSize), dtype=img.dtype )
   else:
-    ret = np.zeros( (kSize, kSize, img.shape[2]), dtype=img.dtype)
-
-  for (m, i) in zip(range(0, kSize), range(-(kSize // 2), (kSize // 2) + 1)):
-    for (n, j) in zip(range(0, kSize), range(-(kSize // 2), (kSize // 2) + 1)):
-      if (0 <= y+i < img.shape[0] and 0 <= x+j < img.shape[1]):
-        ret[m, n] = img[y+i, x+j]
-        
+    ret = np.zeros( (kSize, kSize, img.shape[2]), dtype=img.dtype )
+  
+  for (m, i) in zip( range( 0, kSize ), range( -(kSize // 2), (kSize // 2) + 1 ) ):
+    for (n, j) in zip( range( 0, kSize ), range( -(kSize // 2), (kSize // 2) + 1 ) ):
+      if (0 <= y + i < img.shape[0] and 0 <= x + j < img.shape[1]):
+        ret[m, n] = img[y + i, x + j]
+  
   return ret
 
-def getAnswer(img_mask, img_answer):
+
+def getAnswer( img_mask, img_answer ):
   assert img_mask.shape == img_answer.shape, "must be same shape!"
-  W = np.array([255, 255, 255], dtype=np.uint8)
-  R = np.array([0, 0, 255], dtype=np.uint8)
-  K = np.array([0, 0, 0], dtype=np.uint8)
-  dst = np.zeros(img_answer.shape, dtype=np.uint8)
+  W = np.array( [255, 255, 255], dtype=np.uint8 )
+  R = np.array( [0, 0, 255], dtype=np.uint8 )
+  K = np.array( [0, 0, 0], dtype=np.uint8 )
+  dst = np.zeros( img_answer.shape, dtype=np.uint8 )
   # for i in range(img_answer.shape[0]):
   #   for j in range(img_answer.shape[1]):
   #     a = img_answer[i][j]
@@ -99,9 +101,9 @@ def getAnswer(img_mask, img_answer):
   #     elif ((a == K).all() and (m == W).all()):
   #       dst[i][j] = W
   
-  for i, (aa, mm) in enumerate(zip(img_answer, img_mask)):
-    for j, (a, m) in enumerate(zip(aa, mm)):
-      if i % 100 == 0 and j == 0: print(i, j)
+  for i, (aa, mm) in enumerate( zip( img_answer, img_mask ) ):
+    for j, (a, m) in enumerate( zip( aa, mm ) ):
+      if i % 100 == 0 and j == 0: print( i, j )
       if (m == W).all():
         if (a == R).all():
           dst[i][j] = R
@@ -111,9 +113,9 @@ def getAnswer(img_mask, img_answer):
   return dst
 
 
-def equalizeHist( img, mode='hsv' ):
+def equalizeHistColored( img, mode='hsv' ):
   """
-  ヒストグラム平坦化を行う
+  ヒストグラム平坦化を行う(カラー画像対応)
 
   Parameters
   ----------
@@ -151,7 +153,7 @@ def equalizeHist( img, mode='hsv' ):
     return img
 
 
-def imshow( img, _cmap='gray' ):
+def imshow( img, _cmap='gray', title="", show_axis=False ):
   """
   matplotlib を利用した画像表示をカンタンに行う関数
 
@@ -169,11 +171,19 @@ def imshow( img, _cmap='gray' ):
   -------
 
   """
+  if not show_axis:
+    plt.tick_params( labelbottom=False, labelleft=False, labelright=False, labeltop=False,
+                     bottom=False, left=False, right=False, top=False )
+  if title:
+    plt.suptitle(title)
+    
   if img.ndim == 2:
     plt.imshow( img, cmap=_cmap )
   elif img.ndim == 3:
     plt.imshow( cv2.cvtColor( img, cv2.COLOR_BGR2RGB ) )
+  
   plt.show()
+
 
 
 def showImages( list_img, plt_title=None, list_title=None, list_cmap=None, tuple_shape=None ):
@@ -217,13 +227,16 @@ def showImages( list_img, plt_title=None, list_title=None, list_cmap=None, tuple
   assert tuple_shape is None or tuple_shape[0] * tuple_shape[1] >= len( list_img ), \
     " nrows * ncols of 'tuple_shape' must be equal or larger than Length of 'list_img'"
   
-  plt.suptitle( plt_title )
   
   if tuple_shape is None:
     nrows = math.ceil( math.sqrt( len( list_img ) ) )
     ncols = math.ceil( len( list_img ) / nrows )
   else:
     ncols, nrows = tuple_shape
+
+  # plt.figure( figsize=(ncols * 3, nrows * 1.7), dpi=150 )
+  
+  plt.suptitle( plt_title )
   
   for index, (img, title) in enumerate( zip( list_img, list_title ), start=1 ):
     axes = plt.subplot( ncols, nrows, index )
@@ -232,10 +245,23 @@ def showImages( list_img, plt_title=None, list_title=None, list_cmap=None, tuple
     axes.set_title( title )
     
     if img.ndim == 2:
-      plt.imshow( img, cmap=(
+      axes.imshow( img, cmap=(
         'gray' if list_cmap is None else list_cmap.pop( 0 )) )
     elif img.ndim == 3:
-      plt.imshow( cv2.cvtColor( img, cv2.COLOR_BGR2RGB ) )
+      axes.imshow( cv2.cvtColor( img, cv2.COLOR_BGR2RGB ) )
   
   plt.show()
+  
+  # Maximize Window
+  mng = plt.get_current_fig_manager()
+  # mng.window.state( 'zoomed' )  # TkAgg
+  # mng.frame.Maximize( True )    # wxAgg
+  # mng.window.showMaximized()    # Qt4Agg
+  mng.resize(1920, 1080)        # macosx
+  
+  
+  
 
+if __name__ == '__main__':
+    img = cv2.imread("./img/resource/aerial_roi1_raw.png", cv2.IMREAD_COLOR)
+    imshow(img)
