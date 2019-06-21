@@ -89,6 +89,34 @@ def extractByLabel(src_img, labels, label_nums):
     return dst_img
 
 
+def getSegmentedImageWithLabel(segmented_img, color=(255, 0, 0)):
+    assert type(segmented_img) == np.ndarray and segmented_img.ndim == 2, \
+        "argument 'segmented_img' must be numpy.ndarray and ndim = 2"
+
+    segmented_img = cv2.resize(
+        segmented_img,
+        dsize=None,
+        fx=3.0,
+        fy=3.0,
+        interpolation=cv2.INTER_NEAREST
+    )
+    n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        segmented_img, connectivity=4)
+
+    dst = cv2.cvtColor(segmented_img, cv2.COLOR_GRAY2BGR)
+    for label_num, centroid in enumerate(centroids):
+        cv2.putText(
+            img=dst,
+            text=str(label_num),
+            org=tuple(centroid.astype(np.int16)),
+            fontFace=cv2.FONT_HERSHEY_DUPLEX,
+            fontScale=0.5,
+            color=color,
+            thickness=1,
+            lineType=cv2.LINE_AA
+        )
+
+
 if __name__ == '__main__':
     IMG_PATH = "./img/resource/aerial_roi1_raw_denoised_cripped.png"
 
