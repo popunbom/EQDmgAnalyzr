@@ -67,7 +67,7 @@ def getEdgeAngleVariance(edge_hsv, label_data):
 
 
 def getEdgeHSVArray(src_img):
-    assert (src_img.shape[2] == 1), "\"src_img\" must be 1-ch grayscale image."
+    assert (src_img.ndim == 2), "\"src_img\" must be 1-ch grayscale image."
     dst = np.zeros((src_img.shape[0], src_img.shape[1], 3), dtype=np.float32)
     
     
