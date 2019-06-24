@@ -13,6 +13,7 @@ from mamba import (
 from os import path
 import cv2
 import numpy as np
+from scipy.stats import entropy
 
 from .SharedProcedures import *
 from .Utils import ImageLogger, mamba2cv, pil2cv
@@ -110,7 +111,7 @@ class RegionSegmentation:
             ラベリング結果(dtype=np.int)
         """
         
-        _, labels = cv2.connectedComponents(
+        self.n_labels, labels = cv2.connectedComponents(
             np.bitwise_not( self.segmented_line_img ),
             connectivity=4
         )
@@ -295,64 +296,91 @@ class RegionSegmentation:
         
         return sum_of_difference
     
+    def calc_entropy( self, label_1, label_2, mode='rgb' ):
+        src_img = self.src_img
+        labels = self.labels
+        
+        if mode == 'hsv':
+            src_img = cv2.cvtColor(
+                self.src_img.copy(),
+                cv2.COLOR_BGR2HSV
+            )
+        else:
+            src_img = self.src_img
+            
+        a = np.mean(
+            np.abs(
+                entropy( src_img[labels == label_1] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
+            )
+        )
+        b = np.mean(
+            np.abs(
+                entropy( src_img[labels == label_2] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
+            )
+        )
+        
+        return np.min([a, b])
+    
     def calc_score_all( self, distance=5 ):
         relation = self.relations
         img = self.src_img
-        
+    
         edge = EdgeProcedures( self.src_img )
         edge_angle = edge.get_angle()
-        
+    
         scores = dict()
-        
+    
         for label_1 in relation.keys():
             for label_2, connected_points in relation[label_1].items():
-                
+            
                 eprint( "\rCalculating Score [ Label: ({label_1}, {label_2}) ] ...".format(
                     label_1=label_1,
                     label_2=label_2
                 ), end="" )
-                
+            
                 if label_1 not in scores:
                     scores[label_1] = dict()
-                
+            
                 connected_points = list( connected_points )
                 angle_of_points = np.array( [edge_angle[tuple( point )] for point in connected_points],
                                             dtype=np.float32 )
-                
+            
                 pts_1, pts_2 = EdgeProcedures.calc_end_points(
                     points=connected_points,
                     deg_angles=angle_of_points,
                     distance=distance
                 )
-                
+            
                 pts = np.stack( [pts_1, pts_2], axis=1 )
-                
+            
                 # Filtering if in range coordinates
-                pts_filtered = pts[((0 <= pts[:, 0, 0]) & (pts[:, 0, 0] < img.shape[0])) &
-                                   ((0 <= pts[:, 0, 1]) & (pts[:, 0, 1] < img.shape[1])) &
-                                   ((0 <= pts[:, 1, 0]) & (pts[:, 1, 0] < img.shape[0])) &
-                                   ((0 <= pts[:, 1, 1]) & (pts[:, 1, 1] < img.shape[1]))
-                                   ]
-                
+                pts_filtered = pts[
+                    ((0 <= pts[:, 0, 0]) & (pts[:, 0, 0] < img.shape[0])) &
+                    ((0 <= pts[:, 0, 1]) & (pts[:, 0, 1] < img.shape[1])) &
+                    ((0 <= pts[:, 1, 0]) & (pts[:, 1, 0] < img.shape[0])) &
+                    ((0 <= pts[:, 1, 1]) & (pts[:, 1, 1] < img.shape[1]))
+                    ]
+            
                 val = np.zeros( tuple( (*pts_filtered.shape[:2], 3) ), dtype=np.int32 )
-                
+            
                 val[:, 0] = [
                     cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
                     pt in pts_filtered[:, 0]]
                 val[:, 1] = [
                     cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
                     pt in pts_filtered[:, 1]]
-                
+            
                 # for pt_1, pt_2 in zip( pts_1, pts_2 ):
                 #     val_1 = cv2.cvtColor( img[tuple( pt_1 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
                 #     val_2 = cv2.cvtColor( img[tuple( pt_2 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
                 #
                 #     average_of_difference += np.abs( val_1 - val_2 )
-                
+            
                 scores[label_1][label_2] = np.mean( np.sum( np.abs( val[:, 0] - val[:, 1] ), axis=1 ) )
-                
+            
                 # return cv2.cvtColor( img[tuple(x)].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
         return scores
+    
     
     # Constructor
     def __init__( self, img, logging=False,
@@ -377,8 +405,8 @@ class RegionSegmentation:
         self._labels = None
         self._relations = None
         self._scores = None
-        
         self.logger = None
+        self.n_labels = -1
         
         if isinstance( img, str ):
             if not path.exists( img ):
