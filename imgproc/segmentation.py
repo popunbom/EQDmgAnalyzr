@@ -297,6 +297,33 @@ class RegionSegmentation:
         return sum_of_difference
     
     def calc_entropy( self, label_1, label_2, mode='rgb' ):
+        """
+        2 ラベル間のエントロピーを計算
+            各2領域と、領域統合後のエントロピーの差分
+            を計算する
+        
+        Parameters
+        ----------
+        label_1, label_2 : int
+            ラベル番号
+        mode : str
+            エントロピーを計算する色空間を指定
+            'hsv'  : HSV 色空間で計算
+            その他 : RGB 色空間で計算
+
+        Returns
+        -------
+        np.float64
+            label_1 と label_1 & label_2 間、
+            label_2 と label_1 & label_2 間の
+            エントロピー差分のうち、より小さい方の
+            値
+        
+        """
+        TYPE_ASSERT( label_1, int )
+        TYPE_ASSERT( label_2, int )
+        TYPE_ASSERT( mode, str )
+        
         src_img = self.src_img
         labels = self.labels
         
@@ -380,6 +407,7 @@ class RegionSegmentation:
             
                 # return cv2.cvtColor( img[tuple(x)].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
         return scores
+    
     
     
     # Constructor
