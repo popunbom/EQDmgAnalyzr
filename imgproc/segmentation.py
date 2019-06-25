@@ -24,7 +24,9 @@ from .edge import EdgeProcedures
 class RegionSegmentation:
     LINE_PIXEL_VAL = 255
     LINE_LABEL_VAL = 0
+
     
+    @dec_debug
     def watershed_using_quasi_distance( self ):
         """
         疑似ユークリッド距離(Quasi Distance) に基づく
@@ -42,6 +44,9 @@ class RegionSegmentation:
         pilim : numpy.ndarray
             入力画像に領域分割線が描画された画像
         """
+        
+        if __debug__:
+            eprint("watershed_using_quasi_distance: Calculating ... ", end="")
         
         # Channel Split
         if self.src_img.ndim == 3:
@@ -98,8 +103,12 @@ class RegionSegmentation:
         
         imWts = mamba2cv( imWts )
         
+        if __debug__:
+            eprint("done")
+        
         return imWts
     
+    @dec_debug
     def labeling_by_segmented_img( self ):
         """
         
@@ -118,6 +127,7 @@ class RegionSegmentation:
         
         return labels
     
+    @dec_debug
     def get_segmented_image_with_label( self, font_color=(0, 255, 255) ):
         """
         領域分割線画像をラベリングし、ラベル番号付きの
@@ -166,6 +176,7 @@ class RegionSegmentation:
         
         return img_with_label
     
+    @dec_debug
     def calc_region_connection( self ):
         """
         ラベリング結果から隣接領域情報を生成する
@@ -249,6 +260,19 @@ class RegionSegmentation:
         
         return relation
     
+    @dec_debug
+    def calc_region_pair( self ):
+        relation = self.relations
+        
+        region_pair = set()
+        
+        for label_1, v in relation.items():
+            for label_2, _ in v.items():
+                region_pair.add( tuple( sorted( [label_1, label_2] ) ) )
+                
+        return region_pair
+    
+    @dec_debug
     def calc_score( self, label_1, label_2, distance=5 ):
         TYPE_ASSERT( label_1, int )
         TYPE_ASSERT( label_2, int )
@@ -296,12 +320,74 @@ class RegionSegmentation:
         
         return sum_of_difference
     
+    @dec_debug
+    def calc_score_all( self, distance=5 ):
+        relation = self.relations
+        img = self.src_img
+        
+        edge = EdgeProcedures( self.src_img )
+        edge_angle = edge.get_angle()
+        
+        scores = dict()
+        
+        for label_1 in relation.keys():
+            for label_2, connected_points in relation[label_1].items():
+                
+                eprint( "\rCalculating Score [ Label: ({label_1}, {label_2}) ] ...".format(
+                    label_1=label_1,
+                    label_2=label_2
+                ), end="" )
+                
+                if label_1 not in scores:
+                    scores[label_1] = dict()
+                
+                connected_points = list( connected_points )
+                angle_of_points = np.array( [edge_angle[tuple( point )] for point in connected_points],
+                                            dtype=np.float32 )
+                
+                pts_1, pts_2 = EdgeProcedures.calc_end_points(
+                    points=connected_points,
+                    deg_angles=angle_of_points,
+                    distance=distance
+                )
+                
+                pts = np.stack( [pts_1, pts_2], axis=1 )
+                
+                # Filtering if in range coordinates
+                pts_filtered = pts[
+                    ((0 <= pts[:, 0, 0]) & (pts[:, 0, 0] < img.shape[0])) &
+                    ((0 <= pts[:, 0, 1]) & (pts[:, 0, 1] < img.shape[1])) &
+                    ((0 <= pts[:, 1, 0]) & (pts[:, 1, 0] < img.shape[0])) &
+                    ((0 <= pts[:, 1, 1]) & (pts[:, 1, 1] < img.shape[1]))
+                    ]
+                
+                val = np.zeros( tuple( (*pts_filtered.shape[:2], 3) ), dtype=np.int32 )
+                
+                val[:, 0] = [
+                    cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
+                    pt in pts_filtered[:, 0]]
+                val[:, 1] = [
+                    cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
+                    pt in pts_filtered[:, 1]]
+                
+                # for pt_1, pt_2 in zip( pts_1, pts_2 ):
+                #     val_1 = cv2.cvtColor( img[tuple( pt_1 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+                #     val_2 = cv2.cvtColor( img[tuple( pt_2 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+                #
+                #     average_of_difference += np.abs( val_1 - val_2 )
+                
+                scores[label_1][label_2] = np.mean( np.sum( np.abs( val[:, 0] - val[:, 1] ), axis=1 ) )
+                
+                # return cv2.cvtColor( img[tuple(x)].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+        return scores
+    
+    @dec_debug
     def calc_entropy( self, label_1, label_2, mode='rgb' ):
         """
         2 ラベル間のエントロピーを計算
-            各2領域と、領域統合後のエントロピーの差分
-            を計算する
-        
+            - 各領域と、領域統合後のエントロピー
+              の差分を計算する
+
         Parameters
         ----------
         label_1, label_2 : int
@@ -318,7 +404,7 @@ class RegionSegmentation:
             label_2 と label_1 & label_2 間の
             エントロピー差分のうち、より小さい方の
             値
-        
+
         """
         TYPE_ASSERT( label_1, int )
         TYPE_ASSERT( label_2, int )
@@ -334,7 +420,7 @@ class RegionSegmentation:
             )
         else:
             src_img = self.src_img
-            
+        
         a = np.mean(
             np.abs(
                 entropy( src_img[labels == label_1] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
@@ -346,69 +432,152 @@ class RegionSegmentation:
             )
         )
         
-        return np.min([a, b])
+        return np.min( [a, b] )
     
-    def calc_score_all( self, distance=5 ):
-        relation = self.relations
-        img = self.src_img
-    
-        edge = EdgeProcedures( self.src_img )
-        edge_angle = edge.get_angle()
-    
+    @dec_debug
+    def calc_entropy_all( self, mode='rgb' ):
+        """
+        隣接領域間のエントロピーを計算
+            - 各領域と、領域統合後のエントロピーの
+              差分を計算する
+
+        Parameters
+        ----------
+        mode : str
+            エントロピーを計算する色空間を指定
+            'hsv'  : HSV 色空間で計算
+            その他 : RGB 色空間で計算
+
+        Returns
+        -------
+        np.float64
+            エントロピー差分のうち、より小さい方の値
+
+        """
+        TYPE_ASSERT( mode, str )
+        
+        src_img = self.src_img
+        labels = self.labels
+        
         scores = dict()
-    
-        for label_1 in relation.keys():
-            for label_2, connected_points in relation[label_1].items():
-            
-                eprint( "\rCalculating Score [ Label: ({label_1}, {label_2}) ] ...".format(
-                    label_1=label_1,
-                    label_2=label_2
-                ), end="" )
-            
-                if label_1 not in scores:
-                    scores[label_1] = dict()
-            
-                connected_points = list( connected_points )
-                angle_of_points = np.array( [edge_angle[tuple( point )] for point in connected_points],
-                                            dtype=np.float32 )
-            
-                pts_1, pts_2 = EdgeProcedures.calc_end_points(
-                    points=connected_points,
-                    deg_angles=angle_of_points,
-                    distance=distance
+        
+        
+        if mode == 'hsv':
+            src_img = cv2.cvtColor(
+                self.src_img.copy(),
+                cv2.COLOR_BGR2HSV
+            )
+        else:
+            src_img = self.src_img
+        
+        
+        for label_1, label_2 in self.calc_region_pair():
+            a = np.mean(
+                np.abs(
+                    entropy( src_img[labels == label_1] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
                 )
+            )
+            b = np.mean(
+                np.abs(
+                    entropy( src_img[labels == label_2] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
+                )
+            )
+            score = np.min( [a, b] )
             
-                pts = np.stack( [pts_1, pts_2], axis=1 )
-            
-                # Filtering if in range coordinates
-                pts_filtered = pts[
-                    ((0 <= pts[:, 0, 0]) & (pts[:, 0, 0] < img.shape[0])) &
-                    ((0 <= pts[:, 0, 1]) & (pts[:, 0, 1] < img.shape[1])) &
-                    ((0 <= pts[:, 1, 0]) & (pts[:, 1, 0] < img.shape[0])) &
-                    ((0 <= pts[:, 1, 1]) & (pts[:, 1, 1] < img.shape[1]))
-                    ]
-            
-                val = np.zeros( tuple( (*pts_filtered.shape[:2], 3) ), dtype=np.int32 )
-            
-                val[:, 0] = [
-                    cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
-                    pt in pts_filtered[:, 0]]
-                val[:, 1] = [
-                    cv2.cvtColor( img[tuple( pt )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 ) for
-                    pt in pts_filtered[:, 1]]
-            
-                # for pt_1, pt_2 in zip( pts_1, pts_2 ):
-                #     val_1 = cv2.cvtColor( img[tuple( pt_1 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
-                #     val_2 = cv2.cvtColor( img[tuple( pt_2 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
-                #
-                #     average_of_difference += np.abs( val_1 - val_2 )
-            
-                scores[label_1][label_2] = np.mean( np.sum( np.abs( val[:, 0] - val[:, 1] ), axis=1 ) )
-            
-                # return cv2.cvtColor( img[tuple(x)].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+            if label_1 not in scores:
+                scores[label_1] = dict()
+                
+            scores[label_1][label_2] = score
+        
         return scores
     
+    @dec_debug
+    def merge_region( self, label_1, label_2 ):
+        """
+        label_1, label_2の領域統合を行う
+          - label_1, label_2 のうち、領域の
+            大きい方に統合する
+          - label_1 と label_2 の境界線を
+            領域の大きい方に統合する
+        
+        Parameters
+        ----------
+        label_1, label_2 : int
+            ラベル番号
+
+        Returns
+        -------
+        """
+        TYPE_ASSERT( label_1, [int, np.sctypes['int'], np.sctypes['uint']] )
+        TYPE_ASSERT( label_2, [int, np.sctypes['int'], np.sctypes['uint']] )
+        
+        labels = self.merged_labels
+        relation = self.relations
+        
+        
+        ##### 領域の統合 #####
+        
+        # Calc area
+        area_1 = labels[labels == label_1].size
+        area_2 = labels[labels == label_2].size
+        
+        smaller_label, larger_label = sorted( [area_1, area_2] )
+        
+        # Merge smaller area into larger area
+        labels[labels == smaller_label] = larger_label
+        
+        
+        ###### 線の消去 ######
+        for border_point in relation[label_1][label_2]:
+            labels[tuple( border_point )] = larger_label
+            
+        return
     
+    @dec_debug
+    def merge_regions_by_score( self, entropy_calc_mode='rgb', condition_to_merge="score > 0.5" ):
+        """
+        エントロピーに基づいた領域統合
+          - 隣接領域間のエントロピー差分 (score) を計算
+          - score が 引数 condition_to_merge の条件を
+            満たす場合、領域統合が行われる
+            
+        Parameters
+        ----------
+        entropy_calc_mode : str
+            関数 calc_entropy_all の mode 引数に対応する
+        
+        condition_to_merge : str
+            領域統合を行う条件式
+
+        Returns
+        -------
+        """
+        TYPE_ASSERT( entropy_calc_mode, str )
+        TYPE_ASSERT( condition_to_merge, str )
+        
+        scores = self.calc_entropy_all(mode=entropy_calc_mode)
+        
+        try:
+            score = 1.0
+            eval( condition_to_merge )
+        except Exception as e:
+            eprint("Catch exception while evaluation 'condition_to_merge'\ncondition_to_merge: '{condition_to_merge}'".format(
+                condition_to_merge=condition_to_merge
+            ))
+            print(e)
+        
+        for label_1, v in scores.items():
+            for label_2, score in v.items():
+                if eval( condition_to_merge ):
+                    self.merge_region( label_1, label_2)
+                    
+        # TODO: ラベル番号の振り直し
+        
+        if self.is_logging:
+            self.logger.logging_img( self._labels, "labels" )
+        if self.is_logging:
+            self.logger.logging_img( self._merged_labels, "labels_merged" )
+        
     
     # Constructor
     def __init__( self, img, logging=False,
@@ -430,11 +599,12 @@ class RegionSegmentation:
         
         self.src_img = None
         self._segmented_line_img = None
+        self.n_labels = -1
         self._labels = None
+        self._merged_labels = None
         self._relations = None
         self._scores = None
         self.logger = None
-        self.n_labels = -1
         
         if isinstance( img, str ):
             if not path.exists( img ):
@@ -495,6 +665,20 @@ class RegionSegmentation:
         if self.is_logging:
             self.logger.logging_img( self._labels, "labels" )
     
+    @property
+    def merged_labels( self ):
+        if self._merged_labels is None:
+            self.merged_labels = self.labels.copy()
+        
+        return self._merged_labels
+    
+    @merged_labels.setter
+    def merged_labels( self, value ):
+        self._merged_labels = value
+        
+        if self.is_logging:
+            self.logger.logging_img( self._labels, "labels_merged" )
+
     
     @property
     def relations( self ):
