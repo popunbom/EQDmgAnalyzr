@@ -141,8 +141,20 @@ def TYPE_ASSERT( var, types, allow_empty=False ):
 
     """
     
+    def _unpack_types( _types ):
+        _unpacked = list()
+        for _type in _types:
+            if isinstance( _type, _Iterable ):
+                _unpacked += _type
+            else:
+                _unpacked.append( _type )
+        
+        return tuple(_unpacked)
+        
+    
     if isinstance( types, _Iterable ):
-        types = tuple( [type( None ) if t is None else t for t in types] )
+        types = _unpack_types( types )
+        
         message = "argument '{var_name}' must be {type_str}, not {var_class}".format(
             var_name=_get_var_name( var ),
             type_str=' or '.join( [_get_qualfied_class_name( t ) for t in types] ),
@@ -257,3 +269,17 @@ def SAME_SHAPE_ASSERT( ndarray_1, ndarray_2, ignore_ndim=False ):
     if __debug__:
         if not shape_1 == shape_2:
             raise AssertionError( message )
+
+def dec_debug( func ):
+    def wrapper( *args, **kwargs ):
+        eprint( "{func_name}: Calculating ... ".format(
+            func_name=func.__name__
+        ) )
+        ret_val = func( *args, **kwargs )
+        eprint( "{func_name}: finished !".format(
+            func_name=func.__name__
+        ) )
+    
+        return ret_val
+
+    return wrapper
