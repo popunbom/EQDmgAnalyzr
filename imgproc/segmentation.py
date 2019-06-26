@@ -520,8 +520,8 @@ class RegionSegmentation:
         # Calc area
         area_1 = labels[labels == label_1].size
         area_2 = labels[labels == label_2].size
-        
-        smaller_label, larger_label = sorted( [area_1, area_2] )
+
+        larger_label, smaller_label = (label_1, label_2) if area_1 >= area_2 else (label_2, label_1)
         
         # Merge smaller area into larger area
         labels[labels == smaller_label] = larger_label
@@ -570,8 +570,10 @@ class RegionSegmentation:
             for label_2, score in v.items():
                 if eval( condition_to_merge ):
                     self.merge_region( label_1, label_2)
-                    
-        # TODO: ラベル番号の振り直し
+
+        merged_label = self.merged_labels
+        for i, v in enumerate( np.unique( merged_label ) ):
+            merged_label[merged_label == v] = i
         
         if self.is_logging:
             self.logger.logging_img( self._labels, "labels" )
