@@ -69,9 +69,17 @@ def check_scores( img_path, check_list ):
 if __name__ == '__main__':
     IMG_PATH = "./img/resource/aerial_roi1_raw_denoised_clipped_ver2.png"
     seg = RegionSegmentation( IMG_PATH, logging=True )
+    seg.merge_regions_by_score()
+
+    # seg.merge_region(111, 107)
+    # seg.merge_region(107, 108)
+    # seg.merge_region(108, 109)
+    # seg.merge_region(109, 106)
+    # seg.merge_region(106, 100)
+    # seg.merged_labels = seg.merged_labels
+    
     
     # seg.labels
-    seg.merge_regions_by_score()
     
     
     

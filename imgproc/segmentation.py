@@ -22,9 +22,9 @@ from .edge import EdgeProcedures
 
 
 class RegionSegmentation:
-    LINE_PIXEL_VAL = 255
-    LINE_LABEL_VAL = 0
-
+    LINE_PIXEL_VAL = np.uint8( 255 )
+    LINE_LABEL_VAL = np.int16( 0 )
+    
     
     @dec_debug
     def watershed_using_quasi_distance( self ):
@@ -44,9 +44,6 @@ class RegionSegmentation:
         pilim : numpy.ndarray
             入力画像に領域分割線が描画された画像
         """
-        
-        if __debug__:
-            eprint("watershed_using_quasi_distance: Calculating ... ", end="")
         
         # Channel Split
         if self.src_img.ndim == 3:
@@ -103,9 +100,6 @@ class RegionSegmentation:
         
         imWts = mamba2cv( imWts )
         
-        if __debug__:
-            eprint("done")
-        
         return imWts
     
     @dec_debug
@@ -119,11 +113,15 @@ class RegionSegmentation:
         numpy.ndarray
             ラベリング結果(dtype=np.int)
         """
-        
-        self.n_labels, labels = cv2.connectedComponents(
-            np.bitwise_not( self.segmented_line_img ),
+
+        img = self.segmented_line_img
+
+        n_labels, labels = cv2.connectedComponents(
+            # img => 線画素: 255
+            np.bitwise_not( img ),
             connectivity=4
         )
+        self.n_labels = n_labels
         
         return labels
     
@@ -195,6 +193,9 @@ class RegionSegmentation:
             (0, 1), (-1, 1), (-1, 0), (-1, -1),
             (0, -1), (1, -1), (1, 0), (1, 1)
         ]
+        # D = [
+        #     (0, 1), (-1, 0), (0, -1), (1, 0)
+        # ]
         
         line_img = self.segmented_line_img
         labels = self.labels
@@ -269,7 +270,7 @@ class RegionSegmentation:
         for label_1, v in relation.items():
             for label_2, _ in v.items():
                 region_pair.add( tuple( sorted( [label_1, label_2] ) ) )
-                
+
         return region_pair
     
     @dec_debug
@@ -461,7 +462,6 @@ class RegionSegmentation:
         
         scores = dict()
         
-        
         if mode == 'hsv':
             src_img = cv2.cvtColor(
                 self.src_img.copy(),
@@ -470,23 +470,24 @@ class RegionSegmentation:
         else:
             src_img = self.src_img
         
-        
         for label_1, label_2 in self.calc_region_pair():
             a = np.mean(
                 np.abs(
-                    entropy( src_img[labels == label_1] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
+                    entropy( src_img[labels == label_1] ) - entropy(
+                        src_img[(labels == label_1) | (labels == label_2)] )
                 )
             )
             b = np.mean(
                 np.abs(
-                    entropy( src_img[labels == label_2] ) - entropy( src_img[(labels == label_1) | (labels == label_2)] )
+                    entropy( src_img[labels == label_2] ) - entropy(
+                        src_img[(labels == label_1) | (labels == label_2)] )
                 )
             )
             score = np.min( [a, b] )
             
             if label_1 not in scores:
                 scores[label_1] = dict()
-                
+
             scores[label_1][label_2] = score
         
         return scores
@@ -510,31 +511,37 @@ class RegionSegmentation:
         """
         TYPE_ASSERT( label_1, [int, np.sctypes['int'], np.sctypes['uint']] )
         TYPE_ASSERT( label_2, [int, np.sctypes['int'], np.sctypes['uint']] )
-        
-        labels = self.merged_labels
+
+        merged_labels = self.merged_labels
         relation = self.relations
-        
+        lut = self.labels_lut
+
+        lut_label_1, lut_label_2 = lut[label_1], lut[label_2]
+
+        # Calc area
+        area_1 = merged_labels[merged_labels == lut_label_1].size
+        area_2 = merged_labels[merged_labels == lut_label_2].size
+
+        # 領域の面積によって、大小を決定する
+        larger_label, smaller_label = (lut_label_1, lut_label_2) if area_1 >= area_2 else (lut_label_2, lut_label_1)
         
         ##### 領域の統合 #####
         
-        # Calc area
-        area_1 = labels[labels == label_1].size
-        area_2 = labels[labels == label_2].size
-
-        larger_label, smaller_label = (label_1, label_2) if area_1 >= area_2 else (label_2, label_1)
         
         # Merge smaller area into larger area
-        labels[labels == smaller_label] = larger_label
-        
+        merged_labels[merged_labels == smaller_label] = larger_label
         
         ###### 線の消去 ######
         for border_point in relation[label_1][label_2]:
-            labels[tuple( border_point )] = larger_label
-            
+            merged_labels[tuple( border_point )] = larger_label
+
+        # Update Look-Up-Table
+        lut[smaller_label] = larger_label
+        
         return
     
     @dec_debug
-    def merge_regions_by_score( self, entropy_calc_mode='rgb', condition_to_merge="score > 0.5" ):
+    def merge_regions_by_score( self, entropy_calc_mode='rgb', condition_to_merge="score < 0.5" ):
         """
         エントロピーに基づいた領域統合
           - 隣接領域間のエントロピー差分 (score) を計算
@@ -554,32 +561,53 @@ class RegionSegmentation:
         """
         TYPE_ASSERT( entropy_calc_mode, str )
         TYPE_ASSERT( condition_to_merge, str )
-        
-        scores = self.calc_entropy_all(mode=entropy_calc_mode)
+
+        scores = self.calc_entropy_all( mode=entropy_calc_mode )
         
         try:
             score = 1.0
             eval( condition_to_merge )
         except Exception as e:
-            eprint("Catch exception while evaluation 'condition_to_merge'\ncondition_to_merge: '{condition_to_merge}'".format(
-                condition_to_merge=condition_to_merge
-            ))
-            print(e)
+            eprint(
+                "Catch exception while evaluation 'condition_to_merge'\ncondition_to_merge: '{condition_to_merge}'".format(
+                    condition_to_merge=condition_to_merge
+                ) )
+            print( e )
+
+        f = open( "merged_regions.csv", "wt" )
         
         for label_1, v in scores.items():
             for label_2, score in v.items():
                 if eval( condition_to_merge ):
-                    self.merge_region( label_1, label_2)
+                    f.write( f"{label_1}, {label_2}\n" )
+                    self.merge_region( label_1, label_2 )
+        f.close()
 
-        merged_label = self.merged_labels
-        for i, v in enumerate( np.unique( merged_label ) ):
-            merged_label[merged_label == v] = i
+        # Re-Labeling
+        # merged_labels = self.merged_labels
+        # merged_labels[merged_labels == self.LINE_LABEL_VAL] = self.LINE_PIXEL_VAL
+        # merged_labels[merged_labels != self.LINE_PIXEL_VAL] = np.bitwise_not(self.LINE_PIXEL_VAL)
+
+        # Opening lines
+        # kernel = np.array([
+        #     [1, 1, 1],
+        #     [1, 1, 1],
+        #     [1, 1, 1]
+        # ], dtype=np.uint8)
+        # merged_labels = cv2.morphologyEx(merged_labels.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+        self.merged_labels = self.merged_labels
+
+        # _, self.merged_labels = cv2.connectedComponents(
+        #     np.bitwise_not( merged_labels.astype(np.uint8) ),
+        #     connectivity=4
+        # )
+        
         
         if self.is_logging:
             self.logger.logging_img( self._labels, "labels" )
         if self.is_logging:
             self.logger.logging_img( self._merged_labels, "labels_merged" )
-        
+    
     
     # Constructor
     def __init__( self, img, logging=False,
@@ -604,6 +632,7 @@ class RegionSegmentation:
         self.n_labels = -1
         self._labels = None
         self._merged_labels = None
+        self._labels_lut = None
         self._relations = None
         self._scores = None
         self.logger = None
@@ -679,8 +708,22 @@ class RegionSegmentation:
         self._merged_labels = value
         
         if self.is_logging:
-            self.logger.logging_img( self._labels, "labels_merged" )
-
+            self.logger.logging_img( self._merged_labels, "labels_merged" )
+    
+    @property
+    def labels_lut( self ):
+        if self._labels_lut is None:
+            self.labels_lut = { k: k for k in range( self.n_labels ) }
+        
+        return self._labels_lut
+    
+    @labels_lut.setter
+    def labels_lut( self, value ):
+        self._labels_lut = value
+        
+        if self.is_logging:
+            self.logger.logging_json( self._labels_lut, "labels_lut" )
+    
     
     @property
     def relations( self ):
