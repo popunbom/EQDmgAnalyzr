@@ -113,9 +113,9 @@ class RegionSegmentation:
         numpy.ndarray
             ラベリング結果(dtype=np.int)
         """
-
+        
         img = self.segmented_line_img
-
+        
         n_labels, labels = cv2.connectedComponents(
             # img => 線画素: 255
             np.bitwise_not( img ),
@@ -124,6 +124,36 @@ class RegionSegmentation:
         self.n_labels = n_labels
         
         return labels
+    
+    @dec_debug
+    def binalization_labels( self, labels, thresh=0, dtype=np.uint8, max_val=255 ):
+        """
+        ラベリング結果の2値化処理
+        閾値 thresh 以下の値を 0、閾値 thresh より大きい値を max_val にする
+        
+        Parameters
+        ----------
+        labels : numpy.ndarray
+            ラベリング結果データ
+        thresh : int, default 0
+            閾値
+        dtype : type, default np.uint8
+            2値化結果のデータ型
+        max_val : int, default 255
+            2値化の際の最大値
+
+        Returns
+        -------
+        numpy.ndarray
+            2値化済みのデータ
+        """
+        NDARRAY_ASSERT( labels, ndim=2 )
+        
+        bin_img = np.zeros( labels.shape, dtype=dtype )
+        
+        bin_img[labels > thresh] = max_val
+        
+        return bin_img
     
     @dec_debug
     def get_segmented_image_with_label( self, font_color=(0, 255, 255) ):
@@ -270,7 +300,7 @@ class RegionSegmentation:
         for label_1, v in relation.items():
             for label_2, _ in v.items():
                 region_pair.add( tuple( sorted( [label_1, label_2] ) ) )
-
+        
         return region_pair
     
     @dec_debug
@@ -487,7 +517,7 @@ class RegionSegmentation:
             
             if label_1 not in scores:
                 scores[label_1] = dict()
-
+            
             scores[label_1][label_2] = score
         
         return scores
@@ -511,17 +541,17 @@ class RegionSegmentation:
         """
         TYPE_ASSERT( label_1, [int, np.sctypes['int'], np.sctypes['uint']] )
         TYPE_ASSERT( label_2, [int, np.sctypes['int'], np.sctypes['uint']] )
-
+        
         merged_labels = self.merged_labels
         relation = self.relations
         lut = self.labels_lut
-
+        
         lut_label_1, lut_label_2 = lut[label_1], lut[label_2]
-
+        
         # Calc area
         area_1 = merged_labels[merged_labels == lut_label_1].size
         area_2 = merged_labels[merged_labels == lut_label_2].size
-
+        
         # 領域の面積によって、大小を決定する
         larger_label, smaller_label = (lut_label_1, lut_label_2) if area_1 >= area_2 else (lut_label_2, lut_label_1)
         
@@ -534,7 +564,7 @@ class RegionSegmentation:
         ###### 線の消去 ######
         for border_point in relation[label_1][label_2]:
             merged_labels[tuple( border_point )] = larger_label
-
+        
         # Update Look-Up-Table
         lut[smaller_label] = larger_label
         
@@ -561,7 +591,7 @@ class RegionSegmentation:
         """
         TYPE_ASSERT( entropy_calc_mode, str )
         TYPE_ASSERT( condition_to_merge, str )
-
+        
         scores = self.calc_entropy_all( mode=entropy_calc_mode )
         
         try:
@@ -573,7 +603,7 @@ class RegionSegmentation:
                     condition_to_merge=condition_to_merge
                 ) )
             print( e )
-
+        
         f = open( "merged_regions.csv", "wt" )
         
         for label_1, v in scores.items():
@@ -582,12 +612,12 @@ class RegionSegmentation:
                     f.write( f"{label_1}, {label_2}\n" )
                     self.merge_region( label_1, label_2 )
         f.close()
-
+        
         # Re-Labeling
         # merged_labels = self.merged_labels
         # merged_labels[merged_labels == self.LINE_LABEL_VAL] = self.LINE_PIXEL_VAL
         # merged_labels[merged_labels != self.LINE_PIXEL_VAL] = np.bitwise_not(self.LINE_PIXEL_VAL)
-
+        
         # Opening lines
         # kernel = np.array([
         #     [1, 1, 1],
@@ -595,8 +625,7 @@ class RegionSegmentation:
         #     [1, 1, 1]
         # ], dtype=np.uint8)
         # merged_labels = cv2.morphologyEx(merged_labels.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
-        self.merged_labels = self.merged_labels
-
+        
         # _, self.merged_labels = cv2.connectedComponents(
         #     np.bitwise_not( merged_labels.astype(np.uint8) ),
         #     connectivity=4
@@ -608,6 +637,117 @@ class RegionSegmentation:
         if self.is_logging:
             self.logger.logging_img( self._merged_labels, "labels_merged" )
     
+    @dec_debug
+    def point_interpolation( self ):
+        """
+        領域統合により途切れてしまった
+        領域分割線を補完する
+
+        補完は次のアルゴリズムで行われる
+        1. 線分追跡を行い、「端点」の検出
+           を行う
+        2. 各端点を中心に 5x5 の範囲に端点
+           があるか探索する
+        3. 端点が見つかった場合、2端点間を
+           補完する
+
+        Returns
+        -------
+        """
+        from itertools import chain
+        
+        # 「線分画素」の画素値
+        LINE_PIX_VAL = 255
+        
+        # 端点テンプレート (『ディジタル信号処理』 p.194)
+        T_ENDPOINTS = list( chain.from_iterable( [
+            [np.rot90( np.array( arr, dtype=np.int32 ) * LINE_PIX_VAL, k ) for k in range( 4 )]
+            for arr in [
+                [
+                    [0, 0, 0],
+                    [0, 1, 0],
+                    [-1, 1, -1]
+                ],
+                [
+                    [0, 0, 0],
+                    [0, 1, 0],
+                    [1, 0, 0]
+                ],
+            ]
+        ] ) )
+        
+        def is_endpoints( i, j ):
+            """ Img(j, i) が端点かどうか判定するサブルーチン """
+            
+            # (範囲チェック)
+            if 1 <= i <= line_img.shape[0] - 2 and 1 <= j <= line_img.shape[1] - 2:
+                # 中心 (j, i) から 3x3 の範囲を切り取り、
+                roi = line_img[i - 1:i + 2, j - 1:j + 2]
+                
+                # 端点テンプレートにマッチするかどうかチェック。
+                for template in T_ENDPOINTS:
+                    if np.all( (roi == template)[template != -LINE_PIX_VAL] ):
+                        return True
+            
+            return False
+        
+        # 領域統合処理後のラベリング結果から、2値化により領域分割線画像を生成
+        line_img = self.binalization_labels(self.merged_labels)
+        
+        # 領域分割線画像をネガポジ反転
+        line_img = np.bitwise_not( line_img )
+        
+        # checked: 探索済みの座標を格納
+        checked = set()
+        # connected_pair: 補完が必要な二点間の端点座標のペアを格納
+        connected_pair = list()
+        
+        # メインルーチン
+        for i in range( 1, line_img.shape[0] - 1 ):
+            for j in range( 1, line_img.shape[1] - 1 ):
+                
+                # もし注目画素が「線分画素」で、
+                if line_img[i, j] == LINE_PIX_VAL:
+                    
+                    # その画素が「探索済み」でなく、「端点」であった場合、
+                    if (i, j) not in checked and is_endpoints( i, j ):
+                        
+                        # その画素を探索済みとする。
+                        checked.add( (i, j) )
+                        
+                        # (範囲チェック)
+                        if 2 <= i < line_img.shape[0] - 2 and 2 <= j < line_img.shape[1] - 2:
+                            
+                            # そして、中心画素から 5x5 を切り取り
+                            roi = line_img[i - 2:i + 3, j - 2:j + 3]
+                            
+                            # その中に
+                            for k in range( roi.shape[0] ):
+                                for l in range( roi.shape[1] ):
+                                    
+                                    p = (i + (k - 2), j + (l - 2))
+                                    
+                                    # 端点画素があった場合
+                                    if p != (i, j) and is_endpoints( *p ):
+                                        
+                                        # (i, j) と (i + (k-2), j + (l-2)) の2点を
+                                        # 補完処理リストに追加する。
+                                        connected_pair.append( ((i, j), p) )
+                                        checked.add( p )
+        
+        # 補完処理リストを処理
+        for ((y_1, x_1), (y_2, x_2)) in connected_pair:
+            
+            # center: 二点間の中点
+            center = ((y_1 + y_2) // 2, (x_1 + x_2) // 2)
+            
+            # 座標 center の画素を「線分画素」に
+            line_img[center] = LINE_PIX_VAL
+            
+        if self.is_logging:
+            self.logger.logging_img(line_img, "point_interpolated")
+        
+        return line_img
     
     # Constructor
     def __init__( self, img, logging=False,
