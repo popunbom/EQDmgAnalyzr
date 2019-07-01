@@ -203,6 +203,36 @@ def NDIM_ASSERT( ndarray, ndim ):
         if not ndarray.ndim == ndim:
             raise AssertionError( message )
 
+# numpy.ndarray: ndarray の属性についてのアサーション
+def NDARRAY_ASSERT( ndarray, **kwargs ):
+    """
+    
+    numpy.ndarray: 次元数(`ndim`)についてのアサーション
+    
+    Parameters
+    ----------
+    ndarray : numpy.ndarray
+        アサーションを適応したい変数
+    **kwargs
+        属性(大きさ、データタイプ)
+
+    Returns
+    -------
+
+    """
+    
+    TYPE_ASSERT( ndarray, np.ndarray )
+    
+    message = "argument '{var_name}' must be 'numpy.ndarray(params)'".format(
+        var_name=_get_var_name( ndarray ),
+        params=', '.join( [ "{}={}".format(k, v) for k, v in kwargs.items() ] )
+    )
+    
+    if __debug__:
+        for k, v in kwargs.items():
+            if ndarray.__getattribute__(k) != v:
+                raise AssertionError( message )
+
 
 def SAME_NDIM_ASSERT( ndarray_1, ndarray_2 ):
     """
