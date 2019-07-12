@@ -173,19 +173,28 @@ class RegionSegmentation:
             ラベル番号付きの領域分割線画像
         """
         
-        img_with_label = cv2.resize(
+        base_img = cv2.resize(
+            self.src_img,
+            dsize=None,
+            fx=3.0,
+            fy=3.0,
+            interpolation=cv2.INTER_NEAREST
+        )
+        line_img = cv2.resize(
             self.segmented_line_img,
             dsize=None,
             fx=3.0,
             fy=3.0,
             interpolation=cv2.INTER_NEAREST
         )
-        
         n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            np.bitwise_not( img_with_label ), connectivity=4
+            np.bitwise_not( line_img ), connectivity=4
         )
         
-        img_with_label = cv2.cvtColor( img_with_label, cv2.COLOR_GRAY2BGR )
+        line_img = cv2.cvtColor( line_img, cv2.COLOR_GRAY2BGR )
+        
+        img_with_label = np.maximum(base_img, line_img)
+        
         
         for label_num, centroid in enumerate( centroids ):
             cv2.putText(
@@ -333,23 +342,33 @@ class RegionSegmentation:
             distance=distance
         )
         
-        sum_of_difference = 0
+        # score = 0
+        #
+        # for pt_1, pt_2 in zip( pts_1, pts_2 ):
+        #     val_1 = cv2.cvtColor( img[tuple( pt_1 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+        #     val_2 = cv2.cvtColor( img[tuple( pt_2 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
+        #
+        #     score += np.abs( val_1 - val_2 )
+        #
+        # score = np.sum( score )
         
-        for pt_1, pt_2 in zip( pts_1, pts_2 ):
-            val_1 = cv2.cvtColor( img[tuple( pt_1 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
-            val_2 = cv2.cvtColor( img[tuple( pt_2 )].reshape( 1, 1, 3 ), cv2.COLOR_BGR2HSV )[0, 0].astype( np.int32 )
-            
-            sum_of_difference += np.abs( val_1 - val_2 )
         
-        sum_of_difference = np.sum( sum_of_difference )
+        pixels_1 = np.array( [img[tuple( point )] for point in pts_1], dtype=img.dtype )
+        pixels_2 = np.array( [img[tuple( point )] for point in pts_2], dtype=img.dtype )
+        
+        score = np.mean(
+            np.fabs(
+                np.std(pixels_1, axis=0) - np.std(pixels_2, axis=0)
+            )
+        )
         
         print( "Score[ Sum of Difference, Label: ({label_1}, {label_2}) ] = {score}".format(
             label_1=label_1,
             label_2=label_2,
-            score=sum_of_difference
+            score=score
         ) )
         
-        return sum_of_difference
+        return score
     
     @dec_debug
     def calc_score_all( self, distance=5 ):
@@ -609,7 +628,6 @@ class RegionSegmentation:
         for label_1, v in scores.items():
             for label_2, score in v.items():
                 if eval( condition_to_merge ):
-                    f.write( f"{label_1}, {label_2}\n" )
                     self.merge_region( label_1, label_2 )
         f.close()
         
