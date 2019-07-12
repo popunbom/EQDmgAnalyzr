@@ -193,8 +193,7 @@ class RegionSegmentation:
         
         line_img = cv2.cvtColor( line_img, cv2.COLOR_GRAY2BGR )
         
-        img_with_label = np.maximum(base_img, line_img)
-        
+        img_with_label = np.maximum( base_img, line_img )
         
         for label_num, centroid in enumerate( centroids ):
             cv2.putText(
@@ -358,7 +357,7 @@ class RegionSegmentation:
         
         score = np.mean(
             np.fabs(
-                np.std(pixels_1, axis=0) - np.std(pixels_2, axis=0)
+                np.std( pixels_1, axis=0 ) - np.std( pixels_2, axis=0 )
             )
         )
         
@@ -710,7 +709,7 @@ class RegionSegmentation:
             return False
         
         # 領域統合処理後のラベリング結果から、2値化により領域分割線画像を生成
-        line_img = self.binalization_labels(self.merged_labels)
+        line_img = self.binalization_labels( self.merged_labels )
         
         # 領域分割線画像をネガポジ反転
         line_img = np.bitwise_not( line_img )
@@ -761,9 +760,9 @@ class RegionSegmentation:
             
             # 座標 center の画素を「線分画素」に
             line_img[center] = LINE_PIX_VAL
-            
+        
         if self.is_logging:
-            self.logger.logging_img(line_img, "point_interpolated")
+            self.logger.logging_img( line_img, "point_interpolated" )
         
         return line_img
     
