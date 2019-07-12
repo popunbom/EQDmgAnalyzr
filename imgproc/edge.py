@@ -7,7 +7,6 @@
 # エッジ処理に係る処理
 
 from os import path
-from typing import Any
 
 from .SharedProcedures import *
 
@@ -66,6 +65,104 @@ class EdgeProcedures( object ):
         pts_2 = pts_2.astype( np.int16 )
 
         return pts_1, pts_2
+    
+    @staticmethod
+    def angle_variance_using_mode( _edge_magnitude, _edge_angle ):
+        """
+        最頻角度に基づくエッジ角度分散の計算
+            通常の分散の計算では平均値を用いるが、角度の
+            平均値は単純に求めることが難しいため、最頻値
+            となる角度の全体の角度に対する割合を擬似的に
+            エッジ角度分散とする (星野, 2016)
+            
+        Parameters
+        ----------
+        _edge_magnitude : numpy.ndarray
+            エッジ強度
+        _edge_angle : numpy.ndarray
+            エッジ角度
+
+        Returns
+        -------
+        float
+            エッジ角度の分散値 [0, 1]
+            
+
+        """
+        magnitude = _edge_magnitude
+        angle = _edge_angle
+        
+        hist, _ = np.histogram(
+            angle,
+            weights=magnitude,
+            bins=list( range( 361 ) )
+        )
+        
+        variance = np.max(hist) / np.sum(magnitude)
+        
+        return variance
+        
+    @staticmethod
+    def angle_variance_using_mean_vector( _edge_magnitude, _edge_angle ):
+        """
+        平均ベクトルに基づくエッジ角度分散の計算
+            *REF: [\[PDF\] 角度統計](http://q-bio.jp/images/5/53/角度統計配布_qbio4th.pdf)*
+        
+        - $N$ : 計算対象の角度の個数
+        - まず、$\cos$、$\sin$ の平均値を計算する
+            - それぞれを $M_{\cos}$、$M_{\sin}$ とすると
+            $$ M_{\cos} = \frac{1}{N} \sum^{N} \cos{\theta} \;, \;\; M_{\sin} = \frac{1}{N} \sum^{N} \sin{\theta} $$
+            
+        - ここで、平均ベクトルを考える
+            - 平均ベクトル $(R\cos{\Theta}, R\sin{\Theta})$ は次のように定義される
+                - $R$: ベクトルの長さ
+            $$ (R\cos{\Theta}, R\sin{\Theta}) = (M_{\cos}, M_{\sin}) $$
+        
+        - このとき、エッジ角度分散 $V$ は平均ベクトルの長さ $R$ を用いて次のように定義される
+            $$ V = 1- R $$
+            - $R$ は以下の計算で算出する
+            $$ R = \sqrt{ {M_{\cos}}^2 + {M_{\sin}}^2 } $$
+        Parameters
+        ----------
+        _edge_magnitude : numpy.ndarray
+            エッジ強度
+        _edge_angle : numpy.ndarray
+            エッジ角度
+
+        Returns
+        -------
+        float
+            エッジ角度の分散値 [0, 1]
+
+        """
+        degrees = _edge_angle
+        weights = _edge_magnitude
+        
+        if np.isclose(np.sum(weights), 0):
+            return 0
+        
+        M_cos = np.average(
+            np.cos(
+                np.radians( degrees )
+            ),
+            weights=weights
+        )
+        M_sin = np.average(
+            np.sin(
+                np.radians( degrees )
+            ),
+            weights=weights
+        )
+        
+        R = np.sqrt( (M_cos) ** 2 + (M_sin) ** 2 )
+        
+        variance = 1 - R
+        
+        return variance
+    
+    @staticmethod
+    def magnitude_stddev( _edge_magnitude, _edge_angle ):
+        return np.std(_edge_magnitude)
     
     def set_detector_params( self, **kwargs ):
         """
@@ -127,33 +224,34 @@ class EdgeProcedures( object ):
 
         return angle
     
-    def get_angle_variance_using_mode( self ):
+    def get_feature_by_window( self, func, window_size, step ):
         """
-        エッジ角度分散の計算
-            通常の分散の計算では平均値を用いるが、角度の
-            平均値は単純に求めることが難しいため、最頻値
-            となる角度の全体の角度に対する割合を擬似的に
-            エッジ角度分散とする (星野, 2016)
-            
-            
+        ウィンドウで切りながら、エッジ特徴量を計算
+        
+        Parameters
+        ----------
+        func : callable object
+            特徴量計算を行う関数
+        window_size : int or tuple of int
+            画像を切り取るサイズ
+            詳細は SharedProcedures.compute_by_window を参照
+        step : int or tuple of int
+            切り取り間隔
+            詳細は SharedProcedures.compute_by_window を参照
+
         Returns
         -------
-        float
-            エッジ角度分散値
-            値が大きいほど角度分散が大きいと判断する
-
+        numpy.ndarray
+            特徴量値
         """
-        magnitude = self.get_magnitude()
-        angle = self.get_angle()
-        FLT_EPS = np.finfo( np.float32 ).eps
         
-        # Filter very small values using Machine-Epsilon
-        magnitude[magnitude < FLT_EPS] = 0.0
-        
-        # Calculate Angle Histogram with Edge Magnitude as weights
-        hist, _ = np.histogram( angle, weights=magnitude, bins=list( range( 360 ) ) )
-        
-        return np.sort( hist )[::-1][0] / np.sum( magnitude )
+        return compute_by_window(
+            (self.edge_magnitude, self.edge_angle),
+            func,
+            window_size=window_size,
+            step=step,
+            dst_dtype=np.float64
+        )
     
     def get_angle_colorized_img( self, max_intensity=False, mask_img=None ):
         """
@@ -187,9 +285,10 @@ class EdgeProcedures( object ):
         """
         
         TYPE_ASSERT( mask_img, [None, np.ndarray] )
-        NDIM_ASSERT( mask_img, 2 )
+        if isinstance(mask_img, np.ndarray):
+            NDIM_ASSERT( mask_img, 2 )
         
-        magnitude, angle = self.get_magnitude(), self.get_angle()
+        magnitude, angle = self.edge_magnitude, self.edge_angle
         
         hue = (angle / 2).astype( np.uint8 )
         saturation = np.ones( hue.shape, dtype=hue.dtype ) * 255
@@ -237,6 +336,7 @@ class EdgeProcedures( object ):
             線描画の都合上、画像の大きさが縦、横
             それぞれ3倍されて返却される
         """
+        
         TYPE_ASSERT( mask_img, [None, np.ndarray] )
         NDIM_ASSERT( mask_img, 2 )
         
@@ -270,6 +370,7 @@ class EdgeProcedures( object ):
             cv2.line( angle_line_img, pt_1, pt_2, line_color, thickness=1 )
 
         return angle_line_img
+    
     
     # Constructor
     def __init__( self, img ) -> None:
@@ -328,3 +429,4 @@ class EdgeProcedures( object ):
     @edge_angle.setter
     def edge_angle( self, value ):
         self._edge_angle = value
+
