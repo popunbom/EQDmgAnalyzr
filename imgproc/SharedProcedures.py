@@ -13,8 +13,22 @@ import inspect
 
 import numpy as np
 
+from math import ceil
+
 
 def eprint( *args, end="\n" ):
+    """
+    print 関数の標準エラー出力版
+    Parameters
+    ----------
+    args : list
+        出力したい変数
+    end : str, default "\n"
+        行末に付加される文字列
+
+    Returns
+    -------
+    """
     msg = ' '.join( [str( e ) for e in args] ) + end
     sys.stderr.write( msg )
     sys.stderr.flush()
@@ -34,8 +48,24 @@ class InvalidImageOrFile( Exception ):
         super().__init__( *args )
 
 
-# 変数から変数名の取得
 def _get_var_name( var ):
+    """
+    変数から変数名を取得する
+    
+    Parameters
+    ----------
+    var : object
+        変数名を取得したい変数
+
+    Returns
+    -------
+    str
+        取得した変数名
+    """
+    
+    if var is None:
+        return "None"
+    
     for fi in reversed( inspect.stack() ):
         names = [var_name for var_name, var_val in fi.frame.f_locals.items() if var_val is var]
         if len( names ) > 0:
@@ -44,8 +74,24 @@ def _get_var_name( var ):
         raise CannotFindVariable( "Cannot find variable name" )
 
 
-# オブジェクトの完全クラス名の取得
-def _get_qualfied_class_name( _type ):
+def _get_qualified_class_name( _type ):
+    """
+    オブジェクトの完全クラス名の取得
+    
+    Parameters
+    ----------
+    _type : type object
+        取得したいオブジェクトの type オブジェクト
+
+    Returns
+    -------
+    str
+        オブジェクトの完全名
+    """
+    
+    if _type is None:
+        return "None"
+    
     is_not_builtins = hasattr( _type, "__module__" ) and _type.__module__ != "builtins"
     
     if is_not_builtins:
@@ -57,7 +103,6 @@ def _get_qualfied_class_name( _type ):
         return _type.__name__
 
 
-# 変数が「空」かどうかのチェック
 def _IS_EMPTY( var ):
     """
     変数が「空」かどうかのチェック
@@ -113,7 +158,7 @@ def EMPTY_VALUE_ASSERT( var ):
     Returns
     -------
     """
-    message = "argument '{var_name}' must not be empty value, ({var_name} = {value}".format(
+    message = "argument '{var_name}' must not be empty value, ({var_name} = {value})".format(
         var_name=_get_var_name( var ),
         value=var
     )
@@ -143,34 +188,38 @@ def TYPE_ASSERT( var, types, allow_empty=False ):
     
     def _unpack_types( _types ):
         _unpacked = list()
+        
         for _type in _types:
             if isinstance( _type, _Iterable ):
                 _unpacked += _type
             else:
+                if _type is None:
+                    _type = type( None )
+                
                 _unpacked.append( _type )
         
-        return tuple(_unpacked)
-        
+        return tuple( _unpacked )
+    
     
     if isinstance( types, _Iterable ):
         types = _unpack_types( types )
         
         message = "argument '{var_name}' must be {type_str}, not {var_class}".format(
             var_name=_get_var_name( var ),
-            type_str=' or '.join( [_get_qualfied_class_name( t ) for t in types] ),
-            var_class=_get_qualfied_class_name( type( var ) )
+            type_str=' or '.join( [_get_qualified_class_name( t ) for t in types] ),
+            var_class=_get_qualified_class_name( type( var ) )
         )
     else:
         message = "argument '{var_name}' must be {type_str}, not {var_class}".format(
             var_name=_get_var_name( var ),
-            type_str=_get_qualfied_class_name( types ),
-            var_class=_get_qualfied_class_name( type( var ) )
+            type_str=_get_qualified_class_name( types ),
+            var_class=_get_qualified_class_name( type( var ) )
         )
     
     if __debug__:
         if not isinstance( var, types ):
             raise AssertionError( message )
-        if not allow_empty:
+        if not allow_empty and var is not None:
             EMPTY_VALUE_ASSERT( var )
 
 
@@ -191,7 +240,6 @@ def NDIM_ASSERT( ndarray, ndim ):
     -------
 
     """
-    
     TYPE_ASSERT( ndarray, np.ndarray )
     
     message = "argument '{var_name}' must be 'numpy.ndarray' with {n}-dimension".format(
@@ -202,6 +250,7 @@ def NDIM_ASSERT( ndarray, ndim ):
     if __debug__:
         if not ndarray.ndim == ndim:
             raise AssertionError( message )
+
 
 # numpy.ndarray: ndarray の属性についてのアサーション
 def NDARRAY_ASSERT( ndarray, **kwargs ):
@@ -220,17 +269,16 @@ def NDARRAY_ASSERT( ndarray, **kwargs ):
     -------
 
     """
-    
     TYPE_ASSERT( ndarray, np.ndarray )
     
     message = "argument '{var_name}' must be 'numpy.ndarray(params)'".format(
         var_name=_get_var_name( ndarray ),
-        params=', '.join( [ "{}={}".format(k, v) for k, v in kwargs.items() ] )
+        params=', '.join( ["{}={}".format( k, v ) for k, v in kwargs.items()] )
     )
     
     if __debug__:
         for k, v in kwargs.items():
-            if ndarray.__getattribute__(k) != v:
+            if ndarray.__getattribute__( k ) != v:
                 raise AssertionError( message )
 
 
@@ -287,7 +335,7 @@ def SAME_SHAPE_ASSERT( ndarray_1, ndarray_2, ignore_ndim=False ):
         shape_1 = ndarray_1.shape[:min_ndim]
         shape_2 = ndarray_2.shape[:min_ndim]
     else:
-        shape_1, shape2 = ndarray_1.shape, ndarray_2.shape
+        shape_1, shape_2 = ndarray_1.shape, ndarray_2.shape
     
     message = "argument '{var_name_1}' and '{var_name_2}' must be same shape ({var_name_1}.shape = {shape_1}, {var_name_2}.shape = {shape_2})".format(
         var_name_1=_get_var_name( ndarray_1 ),
@@ -300,7 +348,24 @@ def SAME_SHAPE_ASSERT( ndarray_1, ndarray_2, ignore_ndim=False ):
         if not shape_1 == shape_2:
             raise AssertionError( message )
 
+
 def dec_debug( func ):
+    """
+    Decorator: 関数デバッグ用
+        - 関数呼び出し時と処理終了時に
+          標準エラー出力に出力を行う
+          
+    Parameters
+    ----------
+    func : callable object
+        デコレータを適用したい関数
+
+    Returns
+    -------
+    callable object
+        デコレータ処理を行う関数
+    """
+    
     def wrapper( *args, **kwargs ):
         eprint( "{func_name}: Calculating ... ".format(
             func_name=func.__name__
@@ -309,7 +374,7 @@ def dec_debug( func ):
         eprint( "{func_name}: finished !".format(
             func_name=func.__name__
         ) )
-    
+        
         return ret_val
-
+    
     return wrapper
