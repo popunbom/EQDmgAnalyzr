@@ -118,7 +118,7 @@ def pass1( img, features ):
     
       if D_LOGGING:
         if (j == 0):
-          print( f"PASS 1 - ({j}, {i})" )
+          print( f"\rPASS 1 - ({j}, {i})", end="", flush=True )
     
       if (x != 255):
         continue
@@ -181,7 +181,7 @@ def pass3( features, img ):
     checked.append( p.tolist() )
 
     if D_LOGGING:
-      print( f"PASS 3 - {len(passings)} left." )
+      print( f"\rPASS 3 - {len(passings)} left.", end="", flush=True )
     
     if D_DEBUG_PASS2:
       D_TMP_ARRAY.append( (p[0], p[1]) )
