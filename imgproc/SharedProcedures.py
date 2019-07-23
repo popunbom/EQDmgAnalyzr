@@ -460,11 +460,16 @@ def compute_by_window( imgs, func, window_size=16, step=2, dst_dtype=np.float32 
                 results.size
             ), end="" )
             
-            rois = [
-                img[i: i + w_i, j: j + w_j]
-                for img in imgs
-            ]
+            if isinstance(imgs, np.ndarray):
+                roi = imgs[i: i + w_i, j: j + w_j]
+                results[ii][jj] = func( roi )
             
-            results[ii][jj] = func( *rois )
+            else:
+                rois = [
+                    img[i: i + w_i, j: j + w_j]
+                    for img in imgs
+                ]
+                
+                results[ii][jj] = func( *rois )
     
     return results

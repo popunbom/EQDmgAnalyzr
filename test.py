@@ -9,6 +9,8 @@ import numpy as np
 from imgproc.segmentation import RegionSegmentation
 from imgproc.edge import EdgeProcedures
 
+from imgproc.SharedProcedures import *
+
 check_regions = [
     ((20, 22), "must"),
     ((55, 63), "must"),
@@ -39,6 +41,7 @@ check_regions = [
     ((106, 100), "not"),
 ]
 
+
 def check_scores( img_path, check_list ):
     import itertools
     
@@ -66,23 +69,41 @@ def check_scores( img_path, check_list ):
             print( ', '.join( [str( vvv ) for vvv in vv] ) )
 
 
-if __name__ == '__main__':
-    IMG_PATH = "./img/resource/aerial_roi1_raw_denoised_clipped_ver2.png"
-    seg = RegionSegmentation( IMG_PATH, logging=True )
-    seg.merge_regions_by_score()
 
-    # seg.merge_region(111, 107)
-    # seg.merge_region(107, 108)
-    # seg.merge_region(108, 109)
-    # seg.merge_region(109, 106)
-    # seg.merge_region(106, 100)
-    # seg.merged_labels = seg.merged_labels
-    
-    
-    # seg.labels
-    
-    
+
+
+if __name__ == '__main__':
+    IMG_PATH = "./img/resource/aerial_roi1_raw_denoised_clipped_ver2_equalized.png"
+    # IMG_PATH = "./img/resource/aerial_roi2_equalized_denoised_clipped.png"
+    # seg = RegionSegmentation( IMG_PATH, logging=True )
+
+    # seg.calc_score(53, 59)
     
     # seg.get_segmented_image_with_label()
-    # scores = print( seg.scores )
-    # check_scores( IMG_PATH, check_regions )
+    
+    # seg.merge_regions_by_score()
+
+    # seg.merge_region( 100, 123 )
+    # seg.merge_region( 100, 101 )
+    # seg.merge_region( 125, 134 )
+    # seg.merge_region( 125, 130 )
+    
+    # seg.merge_region( 107, 108 )
+    # seg.merge_region( 111, 107 )
+    # seg.merge_region( 108, 109 )
+    # seg.merge_region( 109, 106 )
+    # seg.merge_region( 106, 100 )
+    # seg.merged_labels = seg.merged_labels
+
+    # seg.point_interpolation()
+
+    img = cv2.imread(IMG_PATH, cv2.IMREAD_COLOR)
+    img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    inst = EdgeProcedures( img_gs )
+    
+    fd_img = inst.get_feature_by_window(
+        inst.angle_variance_using_mean_vector,
+        window_size=8,
+        step=2
+    )

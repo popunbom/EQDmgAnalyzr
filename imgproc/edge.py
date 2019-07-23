@@ -13,6 +13,8 @@ from .SharedProcedures import *
 import cv2
 import numpy as np
 
+from skimage.filters import sobel
+
 
 class EdgeProcedures( object ):
     """
@@ -29,7 +31,7 @@ class EdgeProcedures( object ):
     edge_angle : numpy.ndarray (dtype=np.float32)
         エッジ強度 : [0°, 360°]
     """
-
+    
     @staticmethod
     def calc_end_points( points, deg_angles, distance ):
         """
@@ -58,12 +60,12 @@ class EdgeProcedures( object ):
         P = np.array( points, dtype=np.float32 )
         A = np.stack( [np.sin( rad_angles ), np.cos( rad_angles )], axis=1 )
         D = distance / 2
-
+        
         pts_1, pts_2 = P + (A * D), P - (A * D)
-
+        
         pts_1 = pts_1.astype( np.int16 )
         pts_2 = pts_2.astype( np.int16 )
-
+        
         return pts_1, pts_2
     
     @staticmethod
@@ -98,10 +100,10 @@ class EdgeProcedures( object ):
             bins=list( range( 361 ) )
         )
         
-        variance = np.max(hist) / np.sum(magnitude)
+        variance = np.max( hist ) / np.sum( magnitude )
         
         return variance
-        
+    
     @staticmethod
     def angle_variance_using_mean_vector( _edge_magnitude, _edge_angle ):
         """
@@ -119,7 +121,7 @@ class EdgeProcedures( object ):
             $$ (R\cos{\Theta}, R\sin{\Theta}) = (M_{\cos}, M_{\sin}) $$
         
         - このとき、エッジ角度分散 $V$ は平均ベクトルの長さ $R$ を用いて次のように定義される
-            $$ V = 1- R $$
+            $$ V = 1 - R $$
             - $R$ は以下の計算で算出する
             $$ R = \sqrt{ {M_{\cos}}^2 + {M_{\sin}}^2 } $$
         Parameters
@@ -138,23 +140,19 @@ class EdgeProcedures( object ):
         degrees = _edge_angle
         weights = _edge_magnitude
         
-        if np.isclose(np.sum(weights), 0):
+        if np.isclose( np.sum( weights ), 0 ):
             return 0
         
         M_cos = np.average(
-            np.cos(
-                np.radians( degrees )
-            ),
+            np.cos( np.radians( degrees ) ),
             weights=weights
         )
         M_sin = np.average(
-            np.sin(
-                np.radians( degrees )
-            ),
+            np.sin( np.radians( degrees ) ),
             weights=weights
         )
         
-        R = np.sqrt( (M_cos) ** 2 + (M_sin) ** 2 )
+        R = np.sqrt( M_cos ** 2 + M_sin ** 2 )
         
         variance = 1 - R
         
@@ -162,7 +160,7 @@ class EdgeProcedures( object ):
     
     @staticmethod
     def magnitude_stddev( _edge_magnitude, _edge_angle ):
-        return np.std(_edge_magnitude)
+        return np.std( _edge_magnitude )
     
     def set_detector_params( self, **kwargs ):
         """
@@ -194,15 +192,18 @@ class EdgeProcedures( object ):
         
     
         """
-
+        
+        print("Sobel Edge Detector using Scikit-Image")
         # Sobel Edge Detector
-        dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
-        dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
-
+        # dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
+        # dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
+        
         # Edge Magnitude (Normalize to [0, 1.0])
-        magnitude = np.sqrt( dx * dx + dy * dy )
-        magnitude /= magnitude.max()
-
+        # magnitude = np.sqrt( dx * dx + dy * dy )
+        # magnitude /= magnitude.max()
+        
+        magnitude = sobel(self.src_img)
+        
         return magnitude
     
     def get_angle( self ):
@@ -214,14 +215,14 @@ class EdgeProcedures( object ):
         numpy.ndarray
             エッジ強度(dtype=np.float32, [0°, 360°])
         """
-
+        
         # Sobel Edge Detector
         dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
         dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
 
         # Edge Angle (0° <= θ <= 360°)
         angle = np.round( np.degrees( np.arctan2( dy, dx ) ) ) + 180
-
+        
         return angle
     
     def get_feature_by_window( self, func, window_size, step ):
@@ -285,7 +286,7 @@ class EdgeProcedures( object ):
         """
         
         TYPE_ASSERT( mask_img, [None, np.ndarray] )
-        if isinstance(mask_img, np.ndarray):
+        if isinstance( mask_img, np.ndarray ):
             NDIM_ASSERT( mask_img, 2 )
         
         magnitude, angle = self.edge_magnitude, self.edge_angle
@@ -346,13 +347,13 @@ class EdgeProcedures( object ):
             base_img = self.src_img
         
         SAME_SHAPE_ASSERT( mask_img, base_img, ignore_ndim=True )
-
+        
         angles = self.get_angle()
         
         angle_line_img = cv2.resize(
             base_img, dsize=None, fx=3.0, fy=3.0, interpolation=cv2.INTER_NEAREST
         )
-
+        
         # Vectorization Process
         if mask_img is not None:
             draw_points = (np.argwhere( mask_img != 0 ) + 1) * 3 - 2
@@ -360,15 +361,15 @@ class EdgeProcedures( object ):
         else:
             draw_points = np.stack( np.meshgrid( *[np.arange( i ) for i in mask_img.shape[:2]] ), axis=2 )
             angles = angles.flatten()
-
+        
         pts_1, pts_2 = self.calc_end_points( draw_points, angles, line_length )
-
+        
         # Line Drawing
         for (i, (pt_1, pt_2)) in enumerate( zip( pts_1, pts_2 ) ):
             pt_1, pt_2 = tuple( pt_1[::-1] ), tuple( pt_2[::-1] )
             print( f"\rComputing ... [ {i} / {pts_1.shape[0]} ]", end="", flush=True )
             cv2.line( angle_line_img, pt_1, pt_2, line_color, thickness=1 )
-
+        
         return angle_line_img
     
     
@@ -385,6 +386,8 @@ class EdgeProcedures( object ):
             画像ファイルへのパス(str)の
             両方が許容される
         """
+        
+        # TODO: cv2.cvtColor(BGR2GRAY) と imread(IMREAD_GRAYSCALE) の結果が異なる！？
         
         TYPE_ASSERT( img, (str, np.ndarray) )
         
@@ -429,4 +432,3 @@ class EdgeProcedures( object ):
     @edge_angle.setter
     def edge_angle( self, value ):
         self._edge_angle = value
-
