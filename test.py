@@ -6,10 +6,12 @@
 
 import cv2
 import numpy as np
+import scipy.ndimage as ndi
+import matplotlib.pyplot as plt
+
+from imgproc.utils import *
 from imgproc.segmentation import RegionSegmentation
 from imgproc.edge import EdgeProcedures
-
-from imgproc.SharedProcedures import *
 
 check_regions = [
     ((20, 22), "must"),
@@ -98,7 +100,12 @@ if __name__ == '__main__':
     # seg.point_interpolation()
 
     img = cv2.imread(IMG_PATH, cv2.IMREAD_COLOR)
-    img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    img_gs = cv2.cvtColor( img, cv2.COLOR_BGR2HSV )[:, :, 2]
+
+    # plt.imshow(img_gs, cmap='gray')
+    # plt.show()
+
+    img_gs = img_gs.astype( np.float32 ) / 255.0
 
     inst = EdgeProcedures( img_gs )
     
@@ -107,3 +114,15 @@ if __name__ == '__main__':
         window_size=8,
         step=2
     )
+
+    plt.imshow(
+        fd_img,
+        # ndi.zoom(
+        #     fd_img,
+        #     (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
+        #     order=0,
+        #     mode='nearest'
+        # ),
+        cmap='jet'
+    )
+    plt.show()

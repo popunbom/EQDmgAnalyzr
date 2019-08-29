@@ -8,12 +8,14 @@
 
 from os import path
 
-from .SharedProcedures import *
-
 import cv2
 import numpy as np
 
 from skimage.filters import sobel
+
+from imgproc.utils import compute_by_window
+from utils.assertion import TYPE_ASSERT, NDIM_ASSERT, SAME_SHAPE_ASSERT
+from utils.exception import InvalidImageOrFile
 
 
 class EdgeProcedures( object ):
@@ -139,9 +141,11 @@ class EdgeProcedures( object ):
         """
         degrees = _edge_angle
         weights = _edge_magnitude
-        
+
         if np.isclose( np.sum( weights ), 0 ):
             return 0
+
+        # weights /= weights.max()
         
         M_cos = np.average(
             np.cos( np.radians( degrees ) ),
@@ -151,8 +155,9 @@ class EdgeProcedures( object ):
             np.sin( np.radians( degrees ) ),
             weights=weights
         )
-        
-        R = np.sqrt( M_cos ** 2 + M_sin ** 2 )
+
+        # R = np.sqrt( M_cos ** 2 + M_sin ** 2 )
+        R = np.hypot( M_cos, M_sin )
         
         variance = 1 - R
         
@@ -192,8 +197,8 @@ class EdgeProcedures( object ):
         
     
         """
-        
-        print("Sobel Edge Detector using Scikit-Image")
+
+        print( "Sobel Edge Detector using Scikit-Image -- with mean" )
         # Sobel Edge Detector
         # dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
         # dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
@@ -253,8 +258,8 @@ class EdgeProcedures( object ):
             step=step,
             dst_dtype=np.float64
         )
-    
-    def get_angle_colorized_img( self, max_intensity=False, mask_img=None ):
+
+    def get_angle_colorized_img( self, normalized_magnitude=False, max_intensity=False, mask_img=None ):
         """
         エッジ角度の疑似カラー画像を生成
             Hue (色相) に角度値を割り当て、HSV→RGB への
@@ -292,11 +297,16 @@ class EdgeProcedures( object ):
         magnitude, angle = self.edge_magnitude, self.edge_angle
         
         hue = (angle / 2).astype( np.uint8 )
+
         saturation = np.ones( hue.shape, dtype=hue.dtype ) * 255
+
         if max_intensity:
             value = np.ones( hue.shape, dtype=hue.dtype ) * 255
         else:
-            value = (magnitude * (255.0 / magnitude.max())).astype( np.uint8 )
+            if normalized_magnitude:
+                value = (magnitude * (255.0 / magnitude.max())).astype( np.uint8 )
+            else:
+                value = (magnitude * 255.0).astype( np.uint8 )
         
         angle_img = cv2.cvtColor( np.stack( [hue, saturation, value], axis=2 ), cv2.COLOR_HSV2BGR )
         

@@ -2,130 +2,19 @@
 # -*- coding: utf-8 -*-
 
 # Author: popunbom <fantom0779@gmail.com>
-# Created At: 2019/06/21
-
-
+# Created At: 2019/08/29
+import datetime
 import os
+import sys
 import time
-from datetime import datetime
 
-import cv2
+import cv2 as cv2
 import numpy as np
-from mamba import imageMb
-from mamba.miscellaneous import Mamba2PIL, PIL2Mamba
 from PIL import Image
+from mamba import imageMb
 
-from .SharedProcedures import *
-
-
-class UnsupportedDataTypes( Exception ):
-    
-    
-    def __init__( self, detail: str, **kwargs ) -> None:
-        message = "Unsupported Data Types ({detail})".format(
-            detail=detail
-        )
-        super().__init__( message )
-        self.kwargs = kwargs
-
-
-# PIL.Image.Image --> numpy.ndarray
-def pil2cv( pil_img ):
-    """
-    PIL.Image.Image を numpy.ndarray に変換する
-        REF: https://qiita.com/derodero24/items/f22c22b22451609908ee
-    
-    Parameters
-    ----------
-    pil_img : PIL.Image.Image
-        変換元の PIL.Image.Image 画像データ
-
-    Returns
-    -------
-    numpy.ndarray
-        変換された numpy.ndarray 画像データ
-    """
-    TYPE_ASSERT( pil_img, Image.Image )
-    
-    npy_img = np.array( pil_img )
-    
-    # Data depth conversion
-    if npy_img.dtype not in [np.uint8, np.float32]:
-        npy_img = npy_img.astype( np.float32 )
-        npy_img /= npy_img.max()
-    
-    if npy_img.ndim == 3:
-        if npy_img.shape[2] == 3:
-            # RGB -> BGR
-            npy_img = cv2.cvtColor( npy_img, cv2.COLOR_RGB2BGR )
-        elif npy_img.shape[2] == 4:
-            # RGBA -> BGRA
-            npy_img = cv2.cvtColor( npy_img, cv2.COLOR_RGBA2BGRA )
-        else:
-            raise UnsupportedDataTypes( "npy_img.shape = {shape}".format(
-                shape=npy_img.shape
-            ) )
-    
-    return npy_img
-
-
-# numpy.ndarray --> mamba.base.imageMb
-def cv2mamba( npy_img ):
-    """
-    numpy.ndarray を mamba.base.imageMb に変換する
-    
-    Parameters
-    ----------
-    npy_img : numpy.ndarray
-        変換元の numpy.ndarray 画像データ
-
-    Returns
-    -------
-    mamba.base.imageMb
-        変換された mamba.base.imageMb 画像データ
-    """
-    
-    TYPE_ASSERT( npy_img, np.ndarray )
-    
-    if npy_img.dtype == np.bool:
-        bit_depth = 1
-    elif npy_img.dtype == np.uint8:
-        bit_depth = 8
-    elif npy_img.dtype == np.float32:
-        bit_depth = 32
-    else:
-        raise UnsupportedDataTypes( "npy_img.dtype = {dtype}".format(
-            dtype=npy_img.dtype
-        ) )
-    
-    mb_img = imageMb( npy_img.shape[1], npy_img.shape[0], bit_depth )
-    
-    if npy_img.ndim == 3:
-        npy_img = cv2.cvtColor( npy_img, cv2.COLOR_BGR2RGB )
-    
-    PIL2Mamba( Image.fromarray( npy_img ), mb_img )
-    
-    return mb_img
-
-
-# mamba.base.imageMb --> numpy.ndarray
-def mamba2cv( mb_img ):
-    """
-    mamba.base.imageMb を numpy.ndarray に変換する
-    
-    Parameters
-    ----------
-    mb_img : mamba.base.imageMb
-        変換元の mamba.base.imageMb 画像データ
-
-    Returns
-    -------
-    numpy.ndarray
-        変換された numpy.ndarray 画像データ
-    """
-    TYPE_ASSERT( mb_img, imageMb )
-    
-    return pil2cv( Mamba2PIL( mb_img ) )
+from utils.assertion import TYPE_ASSERT
+from utils.convert import pil2cv, mamba2cv
 
 
 class ImageLogger:
@@ -133,7 +22,7 @@ class ImageLogger:
     作業途中の画像をロギングするためのクラス
         各作業ディレクトリは、prefix, suffix, timestamp
         によって名前がつけられ、その中に画像が保存される
-    
+
     Attributes
     ----------
     base_path : str
@@ -153,13 +42,13 @@ class ImageLogger:
     def _update_timestamp( self ):
         """
         タイムスタンプを現在日時と時刻で更新する
-        
+
         Returns
         -------
         """
         self.timestamp = datetime.now().strftime( self.fmt_timestamp )
         return
-
+    
     def _logging_msg( self, *args, end="\n" ):
         msg = "::ImageLogging:: " + ' '.join( [str( e ) for e in args] ) + end
         sys.stderr.write( msg )
@@ -203,7 +92,7 @@ class ImageLogger:
     def dir_name( self ):
         """
         プロパティ : dir_name
-        
+
         Returns
         -------
         str
@@ -219,7 +108,7 @@ class ImageLogger:
     def dir_path( self ):
         """
         プロパティ : dir_path
-        
+
         Returns
         -------
         str
@@ -236,7 +125,7 @@ class ImageLogger:
             self.base_path 直下にディレクトリを作成する
             すでにフォルダが存在する場合、FileExistsError 例外が発生
             する
-            
+
         Returns
         -------
         bool
@@ -260,41 +149,39 @@ class ImageLogger:
         TYPE_ASSERT( range_v, [tuple, int, np.sctypes['uint'], np.sctypes['int']] )
         
         hsv = list()
-        np.random.seed(int(time.time()))
+        np.random.seed( int( time.time() ) )
         
-        for _range in[range_h, range_s, range_v]:
-            if isinstance(_range, tuple):
-                hsv.append(np.random.randint(low=_range[0], high=_range[1], size=size, dtype=np.uint8))
+        for _range in [range_h, range_s, range_v]:
+            if isinstance( _range, tuple ):
+                hsv.append( np.random.randint( low=_range[0], high=_range[1], size=size, dtype=np.uint8 ) )
             else:
-                hsv.append(np.ones( (size), dtype=np.uint8 ) * _range)
+                hsv.append( np.ones( (size), dtype=np.uint8 ) * _range )
         
-        hsv = np.stack(hsv, axis=1).reshape(size, 1, 3)
+        hsv = np.stack( hsv, axis=1 ).reshape( size, 1, 3 )
         
-        rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+        rgb = cv2.cvtColor( hsv, cv2.COLOR_HSV2BGR )
         
-        return rgb.reshape(size, 3)
+        return rgb.reshape( size, 3 )
     
     def get_psuedo_color_img( self, img ):
         TYPE_ASSERT( img, np.ndarray )
         
+        psuedo_color_img = np.zeros( (*img.shape[:2], 3), dtype=np.uint8 )
         
-        psuedo_color_img = np.zeros( (*img.shape[:2], 3), dtype=np.uint8)
+        max = np.max( img )
         
-        max = np.max(img)
+        colors = self.get_psuedo_colors( size=max, range_s=(100, 255), range_v=(100, 255) )
         
-        colors = self.get_psuedo_colors(size=max, range_s=(100, 255), range_v=(100, 255))
-        
-        for label_num, color in enumerate(colors):
+        for label_num, color in enumerate( colors ):
             psuedo_color_img[img == label_num] = color
-            
+        
         return psuedo_color_img
-        
-        
-        
+    
+    
     def logging_img( self, img, file_name, overwrite=False, do_pseudo_color=False ):
         """
         画像をロギングする処理
-        
+
         Parameters
         ----------
         img : numpy.ndarray or mamba.base.imageMb or PIL.Image.Image
@@ -308,7 +195,7 @@ class ImageLogger:
             name には拡張子を含んでいた場合でも、データ形式
             によって拡張子が PNG または TIFF に変換される
             (詳細は img 引数の説明に記載)
-            
+
         overwrite : bool
             すでに name で指定された画像が存在していた場合に
             上書きをするかどうかのフラグ
@@ -344,7 +231,7 @@ class ImageLogger:
         else:
             # Pseudo colorization
             if do_pseudo_color:
-                img = self.get_psuedo_color_img(img)
+                img = self.get_psuedo_color_img( img )
             
             # Convert data depth
             if img.dtype not in [np.uint8, np.float32]:
@@ -356,12 +243,12 @@ class ImageLogger:
             img_file_path = os.path.join( self.dir_path, file_name + ".tiff" )
         else:
             img_file_path = os.path.join( self.dir_path, file_name + ".png" )
-            
+        
         if cv2.imwrite( img_file_path, img ):
-            self._logging_msg("logging image succesfully ! -- {img_file_path}".format(
+            self._logging_msg( "logging image succesfully ! -- {img_file_path}".format(
                 img_file_path=img_file_path
-            ))
-            
+            ) )
+        
         return
     
     def logging_json( self, dict_obj, file_name, overwrite=False ):
@@ -426,16 +313,16 @@ class ImageLogger:
         
         with open( file_path, "wt" ) as f:
             result = json.dump( dict_obj,
-                              f,
-                              ensure_ascii=False,
-                              sort_keys=True,
-                              indent="\t",
-                              default=_jsonize
-                              )
+                                f,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                indent="\t",
+                                default=_jsonize
+                                )
         
         if result:
-            self._logging_msg("logging json successfully -- {json_file_path}".format(
+            self._logging_msg( "logging json successfully -- {json_file_path}".format(
                 json_file_path=file_path
-            ))
-
+            ) )
+        
         return

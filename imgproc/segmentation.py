@@ -15,9 +15,12 @@ import cv2
 import numpy as np
 from scipy.stats import entropy
 
-from .SharedProcedures import *
-from .Utils import ImageLogger, mamba2cv, pil2cv
-from .Utils import cv2mamba
+from utils.assertion import NDARRAY_ASSERT, TYPE_ASSERT
+from utils.convert import mamba2cv, cv2mamba
+from utils.ImageLogger import ImageLogger
+from utils.common import dec_debug, eprint
+from utils.exception import InvalidImageOrFile
+
 from .edge import EdgeProcedures
 
 
