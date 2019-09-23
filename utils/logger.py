@@ -3,7 +3,7 @@
 
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/08/29
-import datetime
+from datetime import datetime
 import os
 import sys
 import time
@@ -12,6 +12,7 @@ import cv2 as cv2
 import numpy as np
 from PIL import Image
 from mamba import imageMb
+from matplotlib import cm as colormap
 
 from utils.assertion import TYPE_ASSERT
 from utils.convert import pil2cv, mamba2cv
@@ -177,8 +178,7 @@ class ImageLogger:
         
         return psuedo_color_img
     
-    
-    def logging_img( self, img, file_name, overwrite=False, do_pseudo_color=False ):
+    def logging_img( self, img, file_name, overwrite=False, do_pseudo_color=False, cmap="gray" ):
         """
         画像をロギングする処理
 
@@ -195,10 +195,16 @@ class ImageLogger:
             name には拡張子を含んでいた場合でも、データ形式
             によって拡張子が PNG または TIFF に変換される
             (詳細は img 引数の説明に記載)
-
         overwrite : bool
             すでに name で指定された画像が存在していた場合に
             上書きをするかどうかのフラグ
+        do_pseudo_color : bool
+            疑似カラー処理を施すかどうか
+            img がグレースケール時のみ有効
+        cmap : str
+            matplotlib のカラーマップ
+            img がグレースケール かつ do_pseudo_color が
+            Falseのとき有効
 
         Returns
         -------
@@ -232,6 +238,8 @@ class ImageLogger:
             # Pseudo colorization
             if do_pseudo_color:
                 img = self.get_psuedo_color_img( img )
+            elif cmap != "gray":
+                img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )
             
             # Convert data depth
             if img.dtype not in [np.uint8, np.float32]:

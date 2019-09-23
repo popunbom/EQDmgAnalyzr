@@ -4,7 +4,7 @@
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/08/29
 
-from collections.abc import Iterable as _Iterable
+from collections.abc import Iterable
 from numbers import Number
 
 import numpy as np
@@ -99,7 +99,7 @@ def TYPE_ASSERT( var, types, allow_empty=False ):
         _unpacked = list()
         
         for _type in _types:
-            if isinstance( _type, _Iterable ):
+            if isinstance( _type, Iterable ):
                 _unpacked += _type
             else:
                 if _type is None:
@@ -110,7 +110,7 @@ def TYPE_ASSERT( var, types, allow_empty=False ):
         return tuple( _unpacked )
     
     
-    if isinstance( types, _Iterable ):
+    if isinstance( types, Iterable ):
         types = _unpack_types( types )
         
         message = "argument '{var_name}' must be {type_str}, not {var_class}".format(
@@ -142,7 +142,7 @@ def NDIM_ASSERT( ndarray, ndim ):
     ----------
     ndarray : numpy.ndarray
         アサーションを適応したい変数
-    ndim : int
+    ndim : int or tuple of int
         次元数
 
     Returns
@@ -150,12 +150,18 @@ def NDIM_ASSERT( ndarray, ndim ):
 
     """
     TYPE_ASSERT( ndarray, np.ndarray )
+    TYPE_ASSERT( ndim, [int, tuple])
     
-    message = "argument '{var_name}' must be 'numpy.ndarray' with {n}-dimension".format(
-        var_name=get_var_name( ndarray ),
-        n=str( ndim )
-    )
-    
+    if isinstance(ndim, tuple):
+        message = "argument '{var_name}' must be 'numpy.ndarray' with {ns}-dimension".format(
+            var_name=get_var_name( ndarray ),
+            ns=" or ".join([ str(n) for n in ndim])
+        )
+    else:
+        message = "argument '{var_name}' must be 'numpy.ndarray' with {n}-dimension".format(
+            var_name=get_var_name( ndarray ),
+            n=str( ndim )
+        )
     if __debug__:
         if not ndarray.ndim == ndim:
             raise AssertionError( message )

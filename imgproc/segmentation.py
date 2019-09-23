@@ -17,7 +17,7 @@ from scipy.stats import entropy
 
 from utils.assertion import NDARRAY_ASSERT, TYPE_ASSERT
 from utils.convert import mamba2cv, cv2mamba
-from utils.ImageLogger import ImageLogger
+from utils.logger import ImageLogger
 from utils.common import dec_debug, eprint
 from utils.exception import InvalidImageOrFile
 
