@@ -16,7 +16,7 @@ import numpy as np
 from scipy.stats import entropy
 
 from utils.assertion import NDARRAY_ASSERT, TYPE_ASSERT
-from utils.convert import mamba2cv, cv2mamba
+from utils.convert import mamba2np, np2mamba
 from utils.logger import ImageLogger
 from utils.common import dec_debug, eprint
 from utils.exception import InvalidImageOrFile
@@ -50,9 +50,9 @@ class RegionSegmentation:
         
         # Channel Split
         if self.src_img.ndim == 3:
-            imBlue, imGreen, imRed = [cv2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
+            imBlue, imGreen, imRed = [np2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
         elif self.src_img.ndim == 2:
-            imBlue, imGreen, imRed = [cv2mamba( self.src_img )] * 3
+            imBlue, imGreen, imRed = [np2mamba( self.src_img )] * 3
         
         # We will perform a thick gradient on each color channel (contours in original
         # picture are more or less fuzzy) and we add all these gradients
@@ -101,7 +101,7 @@ class RegionSegmentation:
         if self.is_logging:
             self.logger.logging_img( pilim, "segmented_image" )
         
-        imWts = mamba2cv( imWts )
+        imWts = mamba2np( imWts )
         
         return imWts
     
