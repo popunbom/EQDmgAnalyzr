@@ -14,7 +14,7 @@ from utils.assertion import TYPE_ASSERT
 from utils.exception import UnsupportedDataTypes
 
 
-def pil2cv( pil_img ):
+def pil2np( pil_img ):
     """
     PIL.Image.Image を numpy.ndarray に変換する
         REF: https://qiita.com/derodero24/items/f22c22b22451609908ee
@@ -53,7 +53,7 @@ def pil2cv( pil_img ):
     return npy_img
 
 
-def cv2mamba( npy_img ):
+def np2mamba( npy_img ):
     """
     numpy.ndarray を mamba.base.imageMb に変換する
 
@@ -92,7 +92,7 @@ def cv2mamba( npy_img ):
 
 
 # mamba.base.imageMb --> numpy.ndarray
-def mamba2cv( mb_img ):
+def mamba2np( mb_img ):
     """
     mamba.base.imageMb を numpy.ndarray に変換する
 
@@ -108,4 +108,4 @@ def mamba2cv( mb_img ):
     """
     TYPE_ASSERT( mb_img, mb.imageMb )
     
-    return pil2cv( mb.Mamba2PIL( mb_img ) )
+    return pil2np( mb.Mamba2PIL( mb_img ) )
