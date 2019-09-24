@@ -15,7 +15,7 @@ from mamba import imageMb
 from matplotlib import cm as colormap
 
 from utils.assertion import TYPE_ASSERT
-from utils.convert import pil2cv, mamba2cv
+from utils.convert import pil2np, mamba2np
 
 
 class ImageLogger:
@@ -25,7 +25,7 @@ class ImageLogger:
         によって名前がつけられ、その中に画像が保存される
 
     Attributes
-    ----------
+----------
     base_path : str
         ディレクトリを作成するルートパス
     suffix, prefix : str
@@ -85,7 +85,7 @@ class ImageLogger:
         
         if not os.path.exists( self.base_path ):
             os.makedirs( self.base_path )
-            print( "Created directory for logging -- ", self.base_path )
+            print( "Created base directory for logging -- ", self.base_path )
         
         self.makedir()
     
@@ -178,13 +178,13 @@ class ImageLogger:
         
         return psuedo_color_img
     
-    def logging_img( self, img, file_name, overwrite=False, do_pseudo_color=False, cmap="gray" ):
+    def logging_img( self, _img, file_name, overwrite=False, do_pseudo_color=False, cmap="gray" ):
         """
         画像をロギングする処理
 
         Parameters
         ----------
-        img : numpy.ndarray or mamba.base.imageMb or PIL.Image.Image
+        _img : numpy.ndarray or mamba.base.imageMb or PIL.Image.Image
             保存するための画像データ
             img は 8-Bit BGR, Grayscale 画像 または、
             32-Bit Grayscale 画像が想定されている
@@ -210,14 +210,14 @@ class ImageLogger:
         -------
 
         """
-        TYPE_ASSERT( img, [np.ndarray, Image.Image, imageMb] )
+        TYPE_ASSERT( _img, [np.ndarray, Image.Image, imageMb] )
         TYPE_ASSERT( file_name, str )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
         
         # Generate file path
         save_path = os.path.join( self.dir_path, file_name )
         # TODO: 拡張子ありの際の Warning を出す？
-        file_name = os.path.splitext( file_name )[0]
+        # file_name = os.path.splitext( file_name )[0]
         
         # Check file existance
         if os.path.exists( save_path ):
@@ -228,24 +228,37 @@ class ImageLogger:
                     name=file_name,
                     path=self.dir_path
                 ) )
+            
+        img = _img.copy()
         
         # Data conversion (PIL.Image, imageMb --> numpy.ndarray)
         if isinstance( img, Image.Image ):
-            img = pil2cv( img )
+            img = pil2np( img )
         elif isinstance( img, imageMb ):
-            img = mamba2cv( img )
-        else:
-            # Pseudo colorization
-            if do_pseudo_color:
-                img = self.get_psuedo_color_img( img )
-            elif cmap != "gray":
-                img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )
+            img = mamba2np( img )
             
+        if img.ndim == 2:
             # Convert data depth
             if img.dtype not in [np.uint8, np.float32]:
                 img = img.astype( np.float32 )
+            
+            # Pseudo colorization
+            if do_pseudo_color:
+                img = self.get_psuedo_color_img( img )
+            
+            elif cmap != "gray":
+                # TODO: 最大値による正規化ではなく、(v_min, v_max) による正規化にする
+                if img.min() != -np.inf:
+                    img += np.fabs(img.min())
                 img /= img.max()
+                img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )[:, :, [2, 1, 0]]
+            
         
+        if img.ndim == 3:
+            if img.dtype != np.uint8:
+                img += np.fabs( img.min() )
+                img = (img / img.max() * 255).astype(np.uint8)
+                
         # Write file
         if img.dtype != np.uint8:
             img_file_path = os.path.join( self.dir_path, file_name + ".tiff" )
