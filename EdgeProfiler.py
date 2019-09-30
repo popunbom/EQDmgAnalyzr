@@ -3,7 +3,6 @@ import sys
 import copy
 import cv2
 import SaveResultAsImage as sr
-import CommonProcedures as cp
 # for get random strings
 import uuid
 import random as rnd
