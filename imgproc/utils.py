@@ -1,7 +1,7 @@
 # /usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# SharedProcedures : 各モジュールで共通する処理
+# imgproc/utils.py: 各モジュールで共通する処理
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/06/21
 import os
@@ -11,7 +11,7 @@ import numpy as np
 
 from math import ceil
 
-from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT
+from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDIM_ASSERT
 from utils.common import n_args, eprint
 
 
@@ -112,6 +112,24 @@ def compute_by_window( imgs, func, window_size=16, step=2, dst_dtype=np.float32 
 
 
 def get_rect( img_shape, points ):
+    """
+    領域を囲む矩形の座標を計算する
+    
+    Parameters
+    ----------
+    img_shape : tuple of int
+        画像サイズ (高さ, 幅)
+    points : list of points or array of points
+        領域座標のリスト
+    
+    Returns
+    -------
+    list of tuple of int
+        領域を囲む矩形の左上, 右下の座標
+        [(yMin, xMin), (yMax, xMax)]
+    """
+    assert isinstance(img_shape, tuple), "'img_shape' must be tuple"
+    
     yMax, xMax = 0, 0
     yMin, xMin = img_shape
     
@@ -129,29 +147,51 @@ def get_rect( img_shape, points ):
     return [(yMin, xMin), (yMax, xMax)]
 
 
-def divide_by_mask( src_img, npy_label, dir_name ):
-    assert (src_img.shape[2] == 3), \
-        " 'src_img' must be 3-ch RGB image."
+def divide_by_mask( img, npy_label, dir_name ):
+    """
+    マスク画像をもとに画像分割を行う
+    
+    Parameters
+    ----------
+    img : numpy.ndarray
+        入力画像
+    npy_label
+        MaskLabeling.getMaskLabel によるマスク処理結果
+    dir_name
+        分割画像のフォルダ名
+    Returns
+    -------
+    int
+        生成された画像枚数
+    """
+    TYPE_ASSERT( img, np.ndarray )
+    TYPE_ASSERT(npy_label, np.ndarray)
+    TYPE_ASSERT(dir_name, str)
     
     if (not os.path.exists( "img/divided/" + dir_name )):
         os.mkdir( "img/divided/" + dir_name )
+        
+    if img.ndim != 3:
+        img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY )
+    else:
+        img_gs = img
     
     for i in range( len( npy_label ) ):
-        (yMin, xMin), (yMax, xMax) = get_rect( src_img.shape, npy_label[i] )
+        (yMin, xMin), (yMax, xMax) = get_rect( img.shape, npy_label[i] )
         
         cv2.imwrite(
             "img/divided/{dir_name}/{file_name:05d}.png".format(
                 dir_name=dir_name,
                 file_name=i
             ),
-            src_img[yMin:yMax, xMin:xMax]
+            img[yMin:yMax, xMin:xMax]
         )
         cv2.imwrite(
             "img/divided/{dir_name}/canny_{file_name:05d}.png".format(
                 dir_name=dir_name,
                 file_name=i
             ),
-            cv2.Canny( src_img[yMin:yMax, xMin:xMax], 126, 174 )
+            cv2.Canny( img_gs[yMin:yMax, xMin:xMax], 126, 174 )
         )
     
     print( "Total {n} image were created.".format( n=len( npy_label ) ) )
@@ -160,23 +200,80 @@ def divide_by_mask( src_img, npy_label, dir_name ):
 
 
 def pre_process( src_img ):
+    """
+    画像の前処理
+    
+    1. RGB -> HSV への変換
+    
+    2. 各平滑化処理
+    
+       - H, S にメディアンフィルタ(r=5)
+    
+       - V に Mean-Shift (spacial=8, chroma=18)
+    
+    3. HSV -> RGB 逆変換
+    
+    Parameters
+    ----------
+    src_img : numpy.ndarray
+        入力画像(RGB カラー)
+    
+    Returns
+    numpy.ndarray
+        前処理後画像
+    -------
+
+    """
+    NDIM_ASSERT(src_img, 3)
+    
     print( "Image Pre-Processing ... ", flush=True, end="" )
-    hsv = cv2.split( cv2.cvtColor( src_img, cv2.COLOR_BGR2HSV ) )
+    
+    hsv = cv2.cvtColor( src_img, cv2.COLOR_BGR2HSV )
+    h, s, v = [ hsv[:, :, ch] for ch in range(3) ]
     
     # Hue, Saturation: Median( r = 5.0 )
-    hsv[0] = cv2.medianBlur( hsv[0], 5 )
-    hsv[1] = cv2.medianBlur( hsv[1], 5 )
-    # Value: MeanShift( spacial=8.0 chroma=9.0 )
-    hsv[2] = cv2.cvtColor( hsv[2], cv2.COLOR_GRAY2BGR )
-    hsv[2] = cv2.pyrMeanShiftFiltering( hsv[2], 8, 18 )
-    hsv[2] = cv2.cvtColor( hsv[2], cv2.COLOR_BGR2GRAY )
+    h = cv2.medianBlur( h, ksize=5 )
+    s = cv2.medianBlur( s, ksize=5 )
+    
+    # Value: MeanShift ( spacial=8 chroma=18 )
+    v = cv2.cvtColor( v, cv2.COLOR_GRAY2BGR )
+    v = cv2.pyrMeanShiftFiltering( v, sp=8, sr=18 )
+    v = cv2.cvtColor( v, cv2.COLOR_BGR2GRAY )
+    
+    dst = cv2.cvtColor( np.dstack((h, s, v)), cv2.COLOR_HSV2BGR )
     
     print( "done! ", flush=True )
     
-    return cv2.cvtColor( cv2.merge( hsv ), cv2.COLOR_HSV2BGR )
+    return dst
 
 
 def get_roi( img, center_x, center_y, radius, copy=True ):
+    """
+    中心座標, 半径をもとに ROI を取得する
+    
+    Parameters
+    ----------
+    img : numpy.ndarray
+        入力画像
+    center_x, center_y : int
+        中心座標
+    radius : int
+        半径
+    copy : bool
+        画像データをコピーするかどうか
+
+    Returns
+    -------
+    numpy.ndarray
+        ROI 画像
+
+    """
+    TYPE_ASSERT(img, np.ndarray)
+    TYPE_ASSERT(center_x, int)
+    TYPE_ASSERT(center_y, int)
+    TYPE_ASSERT(radius, int)
+    TYPE_ASSERT(copy, bool)
+    
     if copy:
         return img.copy()[
             max( (center_y - radius), 0 ):min( (center_y + radius + 1), img.shape[0] ),
@@ -189,16 +286,33 @@ def get_roi( img, center_x, center_y, radius, copy=True ):
         ]
 
 
-def get_answer( img_mask, img_answer ):
-    assert img_mask.shape == img_answer.shape, "must be same shape!"
+def gen_overlay_by_gt( img_mask, img_gt ):
+    """
+    正解データと建物マスク画像のオーバーレイ画像の生成
+    
+    Parameters
+    ----------
+    img_mask : numpy.ndarray
+        マスク画像
+    img_gt : numpy.ndarray
+        正解データ
+
+    Returns
+    -------
+    numpy.ndarray
+        オーバーレイ画像
+    """
+    TYPE_ASSERT(img_mask, np.ndarray)
+    TYPE_ASSERT(img_gt, np.ndarray)
+    SAME_SHAPE_ASSERT(img_mask, img_gt)
     
     White = np.array( [255, 255, 255], dtype=np.uint8 )
     Red = np.array( [0, 0, 255], dtype=np.uint8 )
     Black = np.array( [0, 0, 0], dtype=np.uint8 )
     
-    dst = np.zeros( img_answer.shape, dtype=np.uint8 )
+    dst = np.zeros( img_gt.shape, dtype=np.uint8 )
     
-    dst[(img_mask == White).all(axis=2) & (img_answer == Red).all(axis=2)] = Red
-    dst[(img_mask == White).all(axis=2) & (img_answer == Black).all(axis=2)] = White
+    dst[(img_mask == White).all(axis=2) & (img_gt == Red).all( axis=2 )] = Red
+    dst[(img_mask == White).all(axis=2) & (img_gt == Black).all( axis=2 )] = White
     
     return dst
