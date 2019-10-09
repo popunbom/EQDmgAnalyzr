@@ -14,8 +14,13 @@ from math import ceil
 from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDIM_ASSERT
 from utils.common import n_args, eprint
 
+"""
+imgproc/utils.py : 汎用的な画像処理
+"""
 
-def compute_by_window( imgs, func, window_size=16, step=2, dst_dtype=np.float32 ):
+
+def compute_by_window( imgs, func, window_size=16, step=2,
+                       dst_dtype=np.float32 ):
     """
     画像を一部を切り取り、func 関数で行った計算結果を
     返却する
@@ -48,7 +53,7 @@ def compute_by_window( imgs, func, window_size=16, step=2, dst_dtype=np.float32 
         各切り取り画像に対する処理結果の行列
     """
     TYPE_ASSERT( imgs, [np.ndarray, tuple] )
-
+    
     if isinstance( imgs, tuple ):
         for img in imgs:
             TYPE_ASSERT( img, np.ndarray )
@@ -59,55 +64,46 @@ def compute_by_window( imgs, func, window_size=16, step=2, dst_dtype=np.float32 
     else:
         n_imgs = 1
         height, width = imgs.shape[:2]
-
+    
     # assert callable( func ) and func.__code__.co_argcount >= n_imgs, \
     assert callable( func ) and n_args( func ) >= n_imgs, \
         "argument 'func' must be callable object which has {0} argument at least. \n".format( n_imgs ) + \
         "  ( num of argumets of 'func' depends on argument 'imgs')"
-
+    
     TYPE_ASSERT( window_size, [int, tuple] )
     TYPE_ASSERT( step, [int, tuple] )
-
+    
     if isinstance( step, int ):
         s_i, s_j = [step] * 2
     else:
         s_i, s_j = step
-
+    
     if isinstance( window_size, int ):
         w_i, w_j = [window_size] * 2
     else:
         w_i, w_j = window_size
-
-    results = np.ndarray(
-        (
-            ceil( height / s_i ),
-            ceil( width / s_j )
-        ),
-        dtype=dst_dtype
-    )
-
-    for ii, i in enumerate( range( 0, height, s_i ) ):
     
+    results = np.ndarray( (ceil( height / s_i ), ceil( width / s_j )),
+                          dtype=dst_dtype )
+    
+    for ii, i in enumerate( range( 0, height, s_i ) ):
+        
         for jj, j in enumerate( range( 0, width, s_j ) ):
-        
+            
             eprint( "\rWindow calculating ... {1:{0}d} / {2:{0}d}".format(
-                len( str( results.size ) ),
-                (jj + 1) + ii * results.shape[1],
-                results.size
-            ), end="" )
-        
+                len( str( results.size ) ), (jj + 1) + ii * results.shape[1],
+                results.size ),
+                end="" )
+            
             if isinstance( imgs, np.ndarray ):
-                roi = imgs[i: i + w_i, j: j + w_j]
+                roi = imgs[i:i + w_i, j:j + w_j]
                 results[ii][jj] = func( roi )
             
             else:
-                rois = [
-                    img[i: i + w_i, j: j + w_j]
-                    for img in imgs
-                ]
-    
+                rois = [img[i:i + w_i, j:j + w_j] for img in imgs]
+                
                 results[ii][jj] = func( *rois )
-
+    
     return results
 
 
@@ -128,7 +124,7 @@ def get_rect( img_shape, points ):
         領域を囲む矩形の左上, 右下の座標
         [(yMin, xMin), (yMax, xMax)]
     """
-    assert isinstance(img_shape, tuple), "'img_shape' must be tuple"
+    assert isinstance( img_shape, tuple ), "'img_shape' must be tuple"
     
     yMax, xMax = 0, 0
     yMin, xMin = img_shape
@@ -165,14 +161,14 @@ def divide_by_mask( img, npy_label, dir_name ):
         生成された画像枚数
     """
     TYPE_ASSERT( img, np.ndarray )
-    TYPE_ASSERT(npy_label, np.ndarray)
-    TYPE_ASSERT(dir_name, str)
+    TYPE_ASSERT( npy_label, np.ndarray )
+    TYPE_ASSERT( dir_name, str )
     
     if (not os.path.exists( "img/divided/" + dir_name )):
         os.mkdir( "img/divided/" + dir_name )
-        
+    
     if img.ndim != 3:
-        img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY )
+        img_gs = cv2.cvtColor( img, cv2.COLOR_BGR2GRAY )
     else:
         img_gs = img
     
@@ -181,70 +177,38 @@ def divide_by_mask( img, npy_label, dir_name ):
         
         cv2.imwrite(
             "img/divided/{dir_name}/{file_name:05d}.png".format(
-                dir_name=dir_name,
-                file_name=i
-            ),
-            img[yMin:yMax, xMin:xMax]
-        )
+                dir_name=dir_name, file_name=i ), img[yMin:yMax, xMin:xMax] )
         cv2.imwrite(
             "img/divided/{dir_name}/canny_{file_name:05d}.png".format(
-                dir_name=dir_name,
-                file_name=i
-            ),
-            cv2.Canny( img_gs[yMin:yMax, xMin:xMax], 126, 174 )
-        )
+                dir_name=dir_name, file_name=i ),
+            cv2.Canny( img_gs[yMin:yMax, xMin:xMax], 126, 174 ) )
     
     print( "Total {n} image were created.".format( n=len( npy_label ) ) )
     
     return len( npy_label )
 
 
-def pre_process( src_img ):
+def check_if_binary_image( img ):
     """
-    画像の前処理
+    画像が2値化画像かどうか判定する
     
-    1. RGB -> HSV への変換
-    
-    2. 各平滑化処理
-    
-       - H, S にメディアンフィルタ(r=5)
-    
-       - V に Mean-Shift (spacial=8, chroma=18)
-    
-    3. HSV -> RGB 逆変換
+    - numpy.unique によって、行列内の要素値
+      を重複なしに取得できることを利用する
     
     Parameters
     ----------
-    src_img : numpy.ndarray
-        入力画像(RGB カラー)
-    
-    Returns
-    numpy.ndarray
-        前処理後画像
-    -------
+    img : numpy.ndarray
+        入力画像 (グレースケール画像)
 
+    Returns
+    -------
+    bool
+        2値化画像かどうか
     """
-    NDIM_ASSERT(src_img, 3)
     
-    print( "Image Pre-Processing ... ", flush=True, end="" )
+    TYPE_ASSERT( img, np.ndarray )
     
-    hsv = cv2.cvtColor( src_img, cv2.COLOR_BGR2HSV )
-    h, s, v = [ hsv[:, :, ch] for ch in range(3) ]
-    
-    # Hue, Saturation: Median( r = 5.0 )
-    h = cv2.medianBlur( h, ksize=5 )
-    s = cv2.medianBlur( s, ksize=5 )
-    
-    # Value: MeanShift ( spacial=8 chroma=18 )
-    v = cv2.cvtColor( v, cv2.COLOR_GRAY2BGR )
-    v = cv2.pyrMeanShiftFiltering( v, sp=8, sr=18 )
-    v = cv2.cvtColor( v, cv2.COLOR_BGR2GRAY )
-    
-    dst = cv2.cvtColor( np.dstack((h, s, v)), cv2.COLOR_HSV2BGR )
-    
-    print( "done! ", flush=True )
-    
-    return dst
+    return img.ndim == 2 and np.unique( img ).size == 2
 
 
 def get_roi( img, center_x, center_y, radius, copy=True ):
@@ -268,22 +232,22 @@ def get_roi( img, center_x, center_y, radius, copy=True ):
         ROI 画像
 
     """
-    TYPE_ASSERT(img, np.ndarray)
-    TYPE_ASSERT(center_x, int)
-    TYPE_ASSERT(center_y, int)
-    TYPE_ASSERT(radius, int)
-    TYPE_ASSERT(copy, bool)
+    TYPE_ASSERT( img, np.ndarray )
+    TYPE_ASSERT( center_x, int )
+    TYPE_ASSERT( center_y, int )
+    TYPE_ASSERT( radius, int )
+    TYPE_ASSERT( copy, bool )
     
     if copy:
-        return img.copy()[
-            max( (center_y - radius), 0 ):min( (center_y + radius + 1), img.shape[0] ),
-            max( (center_x - radius), 0 ):min( (center_x + radius + 1), img.shape[1] )
-        ]
+        return img.copy()[max( (center_y - radius), 0 ):min( (center_y + radius +
+                                                              1), img.shape[0] ),
+               max( (center_x - radius), 0 ):min( (center_x + radius +
+                                                   1), img.shape[1] )]
     else:
-        return img[
-           max( (center_y - radius), 0 ):min( (center_y + radius + 1), img.shape[0] ),
-           max( (center_x - radius), 0 ):min( (center_x + radius + 1), img.shape[1] )
-        ]
+        return img[max( (center_y - radius), 0 ):min( (center_y + radius +
+                                                       1), img.shape[0] ),
+               max( (center_x - radius), 0 ):min( (center_x + radius +
+                                                   1), img.shape[1] )]
 
 
 def gen_overlay_by_gt( img_mask, img_gt ):
@@ -302,9 +266,9 @@ def gen_overlay_by_gt( img_mask, img_gt ):
     numpy.ndarray
         オーバーレイ画像
     """
-    TYPE_ASSERT(img_mask, np.ndarray)
-    TYPE_ASSERT(img_gt, np.ndarray)
-    SAME_SHAPE_ASSERT(img_mask, img_gt)
+    TYPE_ASSERT( img_mask, np.ndarray )
+    TYPE_ASSERT( img_gt, np.ndarray )
+    SAME_SHAPE_ASSERT( img_mask, img_gt )
     
     White = np.array( [255, 255, 255], dtype=np.uint8 )
     Red = np.array( [0, 0, 255], dtype=np.uint8 )
@@ -312,7 +276,8 @@ def gen_overlay_by_gt( img_mask, img_gt ):
     
     dst = np.zeros( img_gt.shape, dtype=np.uint8 )
     
-    dst[(img_mask == White).all(axis=2) & (img_gt == Red).all( axis=2 )] = Red
-    dst[(img_mask == White).all(axis=2) & (img_gt == Black).all( axis=2 )] = White
+    dst[(img_mask == White).all( axis=2 ) & (img_gt == Red).all( axis=2 )] = Red
+    dst[(img_mask == White).all( axis=2 )
+        & (img_gt == Black).all( axis=2 )] = White
     
     return dst
