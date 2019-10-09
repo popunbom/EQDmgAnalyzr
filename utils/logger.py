@@ -14,7 +14,7 @@ from PIL import Image
 from mamba import imageMb
 from matplotlib import cm as colormap
 
-from utils.assertion import TYPE_ASSERT
+from utils.assertion import TYPE_ASSERT, NDARRAY_ASSERT
 from utils.convert import pil2np, mamba2np
 
 
@@ -54,6 +54,38 @@ class ImageLogger:
         msg = "::ImageLogging:: " + ' '.join( [str( e ) for e in args] ) + end
         sys.stderr.write( msg )
         sys.stderr.flush()
+        
+    def _check_overwrite( self, allow_overwrite, file_path ):
+        """
+        ファイルの存在チェック
+        
+        - allow_overwrite が True かつ、ファイルが存在した場合、
+          ファイルを削除する
+        - allow_overwrite が False かつ、ファイルが存在する場合、
+          FileExistsError 例外を投げる
+        
+        Parameters
+        ----------
+        allow_overwrite : bool
+            ファイルの上書き可否
+            
+        file_path : Path-like object
+            ファイルへの絶対パス
+
+        Returns
+        -------
+
+        """
+        if os.path.exists( file_path ):
+            
+            if allow_overwrite:
+                self._logging_msg(f"File will be removed -- '{file_path}'")
+                os.remove( file_path )
+            
+            else:
+                raise FileExistsError( "File already exists ! -- '{file_path}'".format(
+                    file_path=file_path
+                ) )
     
     def __init__( self, base_path, suffix="", prefix="", separator='_', fmt_timestamp="%Y%m%d_%H%M%S" ) -> None:
         """
@@ -219,16 +251,9 @@ class ImageLogger:
         # TODO: 拡張子ありの際の Warning を出す？
         # file_name = os.path.splitext( file_name )[0]
         
-        # Check file existance
-        if os.path.exists( save_path ):
-            if overwrite:
-                os.remove( save_path )
-            else:
-                raise FileExistsError( "Logging image already exists ! [name='{name}', path='{path}']".format(
-                    name=file_name,
-                    path=self.dir_path
-                ) )
-            
+        # Check file existence
+        self._check_overwrite(overwrite, save_path)
+        
         img = _img.copy()
         
         # Data conversion (PIL.Image, imageMb --> numpy.ndarray)
@@ -261,13 +286,14 @@ class ImageLogger:
                 
         # Write file
         if img.dtype != np.uint8:
-            img_file_path = os.path.join( self.dir_path, file_name + ".tiff" )
+            save_path = os.path.join( self.dir_path, file_name + ".tiff" )
         else:
-            img_file_path = os.path.join( self.dir_path, file_name + ".png" )
+            save_path = os.path.join( self.dir_path, file_name + ".png" )
         
-        if cv2.imwrite( img_file_path, img ):
-            self._logging_msg( "logging image succesfully ! -- {img_file_path}".format(
-                img_file_path=img_file_path
+        if cv2.imwrite( save_path, img ):
+            
+            self._logging_msg( "Logging Image succesfully ! -- {save_path}".format(
+                save_path=save_path
             ) )
         
         return
@@ -325,14 +351,11 @@ class ImageLogger:
         import json
         
         file_name = os.path.splitext( file_name )[0] + ".json"
-        file_path = os.path.join( self.dir_path, file_name )
-        
-        if not overwrite and os.path.exists( file_path ):
-            raise FileExistsError( "JSON file already exists ! -- '{file_path}'".format(
-                file_path=file_path
-            ) )
-        
-        with open( file_path, "wt" ) as f:
+        save_path = os.path.join( self.dir_path, file_name )
+
+        self._check_overwrite( overwrite, save_path )
+
+        with open( save_path, "wt" ) as f:
             result = json.dump( dict_obj,
                                 f,
                                 ensure_ascii=False,
@@ -342,8 +365,49 @@ class ImageLogger:
                                 )
         
         if result:
-            self._logging_msg( "logging json successfully -- {json_file_path}".format(
-                json_file_path=file_path
+            self._logging_msg( "Logging JSON successfully -- {save_path}".format(
+                save_path=save_path
             ) )
         
+        return
+
+    def logging_csv( self, npy_array, file_name, overwrite=False ):
+        """
+        numpy.ndarray を CSV としてロギング
+
+        Parameters
+        ----------
+        npy_array : numpy.ndarray
+            CSV として保存する numpy.ndarray
+            ndarray は 2次元まで対応
+        
+        file_name : str
+            ファイル名
+            拡張子を含んでいた場合でも ".csv" に変換
+            される
+
+        overwrite : bool
+            すでに file_name で指定されたファイルが存在
+            していた場合に上書きをするかどうかのフラグ
+
+        Returns
+        -------
+
+        """
+        TYPE_ASSERT( npy_array )
+        assert npy_array.ndim <= 2, "'npy_array' must be 1-D or 2-D array."
+        TYPE_ASSERT( file_name, str )
+        TYPE_ASSERT( overwrite, bool, allow_empty=True )
+
+        file_name = os.path.splitext( file_name )[0] + ".csv"
+        save_path = os.path.join( self.dir_path, file_name )
+
+        self._check_overwrite( overwrite, save_path )
+
+        np.savetxt( save_path, npy_array, delimiter=',', fmt='%.8f' )
+
+        self._logging_msg( "Logging CSV successfully -- {save_path}".format(
+            save_path=save_path
+        ) )
+
         return
