@@ -6,7 +6,11 @@ data
 data/
 img
 img/
+tmp
 notebooks
+
+### Visual Studio Code ###
+.vscode
 
 ### JupyterNotebook ###
 .ipynb_checkpoints
