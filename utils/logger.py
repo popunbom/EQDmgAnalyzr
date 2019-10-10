@@ -54,7 +54,7 @@ class ImageLogger:
         msg = "::ImageLogging:: " + ' '.join( [str( e ) for e in args] ) + end
         sys.stderr.write( msg )
         sys.stderr.flush()
-        
+
     def _check_overwrite( self, allow_overwrite, file_path ):
         """
         ファイルの存在チェック
@@ -79,7 +79,7 @@ class ImageLogger:
         if os.path.exists( file_path ):
             
             if allow_overwrite:
-                self._logging_msg(f"File will be removed -- '{file_path}'")
+                self._logging_msg( f"File will be removed -- '{file_path}'" )
                 os.remove( file_path )
             
             else:
@@ -252,7 +252,7 @@ class ImageLogger:
         # file_name = os.path.splitext( file_name )[0]
         
         # Check file existence
-        self._check_overwrite(overwrite, save_path)
+        self._check_overwrite( overwrite, save_path )
         
         img = _img.copy()
         
@@ -261,7 +261,7 @@ class ImageLogger:
             img = pil2np( img )
         elif isinstance( img, imageMb ):
             img = mamba2np( img )
-            
+
         if img.ndim == 2:
             # Convert data depth
             if img.dtype not in [np.uint8, np.float32]:
@@ -274,16 +274,15 @@ class ImageLogger:
             elif cmap != "gray":
                 # TODO: 最大値による正規化ではなく、(v_min, v_max) による正規化にする
                 if img.min() != -np.inf:
-                    img += np.fabs(img.min())
+                    img += np.fabs( img.min() )
                 img /= img.max()
                 img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )[:, :, [2, 1, 0]]
-            
         
         if img.ndim == 3:
             if img.dtype != np.uint8:
                 img += np.fabs( img.min() )
-                img = (img / img.max() * 255).astype(np.uint8)
-                
+                img = (img / img.max() * 255).astype( np.uint8 )
+        
         # Write file
         if img.dtype != np.uint8:
             save_path = os.path.join( self.dir_path, file_name + ".tiff" )
@@ -297,8 +296,8 @@ class ImageLogger:
             ) )
         
         return
-    
-    def logging_json( self, dict_obj, file_name, overwrite=False ):
+
+    def logging_dict( self, dict_obj, file_name, overwrite=False ):
         """
         dict を JSON としてロギング
 
@@ -371,19 +370,20 @@ class ImageLogger:
         
         return
 
-    def logging_csv( self, npy_array, file_name, overwrite=False ):
+    def logging_ndarray( self, ndarray, file_name, overwrite=False ):
         """
-        numpy.ndarray を CSV としてロギング
+        numpy.ndarray をロギングする
+        
+        numpy.ndarray.save による .npy ファイルに保存する
 
         Parameters
         ----------
-        npy_array : numpy.ndarray
-            CSV として保存する numpy.ndarray
-            ndarray は 2次元まで対応
+        ndarray : numpy.ndarray
+            保存する numpy.ndarray
         
         file_name : str
             ファイル名
-            拡張子を含んでいた場合でも ".csv" に変換
+            拡張子を含んでいた場合でも ".npy" に変換
             される
 
         overwrite : bool
@@ -394,19 +394,19 @@ class ImageLogger:
         -------
 
         """
-        TYPE_ASSERT( npy_array )
-        assert npy_array.ndim <= 2, "'npy_array' must be 1-D or 2-D array."
+        TYPE_ASSERT( ndarray, np.ndarray )
+        assert ndarray.ndim <= 2, "'ndarray' must be 1-D or 2-D array."
         TYPE_ASSERT( file_name, str )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
 
-        file_name = os.path.splitext( file_name )[0] + ".csv"
+        file_name = os.path.splitext( file_name )[0] + ".npy"
         save_path = os.path.join( self.dir_path, file_name )
 
         self._check_overwrite( overwrite, save_path )
 
-        np.savetxt( save_path, npy_array, delimiter=',', fmt='%.8f' )
+        np.save( save_path, ndarray )
 
-        self._logging_msg( "Logging CSV successfully -- {save_path}".format(
+        self._logging_msg( "Logging NPY successfully -- {save_path}".format(
             save_path=save_path
         ) )
 
