@@ -18,6 +18,7 @@ from utils.logger import ImageLogger
 from utils.assertion import TYPE_ASSERT
 
 
+# TODO: ウィンドウ処理を追加
 class GLCMFeatures:
     """
     Attributes
@@ -49,7 +50,9 @@ class GLCMFeatures:
         Parameters
         ----------
         src_img : numpy.ndarray
-            入力画像(グレースケール)
+            入力画像
+            RGB カラー画像が与えられた場合、
+            グレースケールに変換される
         distances : list of int
             2画素間の距離
             距離ごとに特徴量を計算する
