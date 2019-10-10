@@ -44,7 +44,9 @@ def labeling_from_mask( img_bin ):
         img_bin = (img_bin == img_bin.max()).astype(np.uint8) * 255
     
     eprint( "Labeling... ", end="")
+
     n_labels, labels = cv2.connectedComponents( img_bin )
+
     eprint( "done! (Labels = {n_labels})".format(n_labels=n_labels) )
     
     eprint( "Create label array ... ", end="")

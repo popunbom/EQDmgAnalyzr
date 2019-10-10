@@ -1,8 +1,8 @@
 import numpy as np
 import cv2
 import SaveResultAsImage as sr
-import MaskLabeling as ml
 import imgproc.utils
+from imgproc.labeling import labeling_from_mask
 
 FLT_EPS = np.finfo( np.float32 ).eps
 QUANTIZE = 10
@@ -263,7 +263,7 @@ def proc1( str1, sw ):
     img_src = cv2.imread( "img/aerial_only_" + str1 + ".png", cv2.IMREAD_COLOR )
     img_mask = cv2.imread( "img/mask_invert_" + str1 + ".png", cv2.IMREAD_GRAYSCALE )
     # npy_label = np.load( "data/label.npy" )
-    npy_label = ml.getMaskLabel( img_mask )
+    npy_label = labeling_from_mask( img_mask )
     # npy_data  = np.load( "data/edge_length_average.npy" )
     src_gray = cv2.cvtColor( img_src, cv2.COLOR_BGR2GRAY )
     npy_data = getAverageEdgeLength( src_gray, img_mask, npy_label, sw )
@@ -284,7 +284,7 @@ def proc2( str1 ):
     img_src = cv2.imread( "img/non_blured/aerial_only_" + str1 + ".png", cv2.IMREAD_COLOR )
     img_mask = cv2.imread( "img/mask_invert_" + str1 + ".png", cv2.IMREAD_GRAYSCALE )
     # npy_label = np.load( "data/label.npy" )
-    npy_label = ml.getMaskLabel( img_mask )
+    npy_label = labeling_from_mask( img_mask )
     # npy_data  = np.load( "data/edge_variance.npy" )
     npy_data = getEdgeAngleVariance( getEdgeHSVArray( img_src ), npy_label )
     # np.save("data/edge_variance.npy", edge_len)
