@@ -206,8 +206,8 @@ class EdgeProcedures( object ):
         # Edge Magnitude (Normalize to [0, 1.0])
         # magnitude = np.sqrt( dx * dx + dy * dy )
         # magnitude /= magnitude.max()
-        
-        magnitude = sobel(self.src_img)
+
+        magnitude = sobel( self.src_img )
         
         return magnitude
     
