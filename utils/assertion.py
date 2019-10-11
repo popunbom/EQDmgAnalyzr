@@ -185,8 +185,8 @@ def NDARRAY_ASSERT( ndarray, **kwargs ):
 
     """
     TYPE_ASSERT( ndarray, np.ndarray )
-    
-    message = "argument '{var_name}' must be 'numpy.ndarray(params)'".format(
+
+    message = "argument '{var_name}' must be 'numpy.ndarray({params})'".format(
         var_name=get_var_name( ndarray ),
         params=', '.join( ["{}={}".format( k, v ) for k, v in kwargs.items()] )
     )
