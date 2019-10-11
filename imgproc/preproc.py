@@ -13,7 +13,38 @@ import cv2
 from utils.assertion import *
 
 
-def denoise_by_median_and_meanshift( src_img ):
+def unsharp( img, k=1.0, ksize=3 ):
+    """
+    鮮鋭化 (アンシャープマスク)
+    
+    Parameters
+    ----------
+    img : numpy.ndarray
+        入力画像
+    k : int or float
+        鮮鋭化の強さ
+    ksize : int, odd number
+        カーネルの大きさ
+        奇数である必要がある
+
+    Returns
+    -------
+    numpy.ndarray
+        処理結果画像
+    """
+    NDARRAY_ASSERT( img, dtype=np.uint8 )
+    TYPE_ASSERT( k, [int, float] )
+    TYPE_ASSERT( ksize, int )
+    assert ksize % 2 != 0, "'ksize' must be odd number"
+    
+    kern = np.full( (ksize, ksize), -k / (ksize * ksize), dtype=np.float32 )
+    
+    kern[ksize // 2, ksize // 2] = 1 + k - 1 / (ksize * ksize) * k
+    
+    return cv2.filter2D( img, cv2.CV_8U, kern )
+
+
+def denoise_by_median_and_meanshift( img ):
     """
     メディアンフィルタと Mean-Shift による平滑化処理
 
@@ -29,7 +60,7 @@ def denoise_by_median_and_meanshift( src_img ):
 
     Parameters
     ----------
-    src_img : numpy.ndarray
+    img : numpy.ndarray
         入力画像 (RGB カラー)
 
     Returns
@@ -38,11 +69,11 @@ def denoise_by_median_and_meanshift( src_img ):
     -------
 
     """
-    NDIM_ASSERT( src_img, 3 )
+    NDIM_ASSERT( img, 3 )
     
     print( "Image Pre-Processing ... ", flush=True, end="" )
-    
-    hsv = cv2.cvtColor( src_img, cv2.COLOR_BGR2HSV )
+
+    hsv = cv2.cvtColor( img, cv2.COLOR_BGR2HSV )
     h, s, v = [hsv[:, :, ch] for ch in range( 3 )]
     
     # Hue, Saturation: Median( r = 5.0 )
@@ -59,6 +90,7 @@ def denoise_by_median_and_meanshift( src_img ):
     print( "done! ", flush=True )
     
     return dst
+
 
 def equalized_histogram_using_mask( img, mask, mode="rgb" ):
     """
@@ -90,7 +122,7 @@ def equalized_histogram_using_mask( img, mask, mode="rgb" ):
     
     NDIM_ASSERT( img, 3 )
     NDIM_ASSERT( mask, 2 )
-    TYPE_ASSERT(mode, str)
+    TYPE_ASSERT( mode, str )
     assert mode in ("rgb", "hsv"), "'mode' must be 'rgb' or 'hsv'"
     
     m = (mask / mask.max()).flatten()
@@ -102,8 +134,8 @@ def equalized_histogram_using_mask( img, mask, mode="rgb" ):
     
     if mode == "hsv":
         img = cv2.cvtColor( img, cv2.COLOR_BGR2HSV )
-        h, s, v = [ img[:, :, ch] for ch in range(3) ]
-    
+        h, s, v = [img[:, :, ch] for ch in range( 3 )]
+        
         for i, ch in zip( (1, 2), [s, v] ):
             ch = ch.flatten()
             x_masked = ch[m == 1]
@@ -119,12 +151,12 @@ def equalized_histogram_using_mask( img, mask, mode="rgb" ):
             img[:, :, i] = cdf[ch].reshape( img.shape[:2] )
         
         equalized = cv2.cvtColor( img, cv2.COLOR_HSV2BGR )
-    
+
         for i in range( 3 ):
             equalized[:, :, i] = equalized[:, :, i] * mask
-            
+
     elif mode == "rgb":
-        b, g, r = [ img[:, :, ch] for ch in range(3) ]
+        b, g, r = [img[:, :, ch] for ch in range( 3 )]
         equalized = np.zeros( img.shape, dtype=np.uint8 )
     
         for i, x in enumerate( [b, g, r] ):
@@ -132,13 +164,12 @@ def equalized_histogram_using_mask( img, mask, mode="rgb" ):
             x_masked = x[m == 1]
             hist, bins = np.histogram( x_masked, 256, [0, 256] )
             cdf = hist.cumsum()
-        
+
             cdf_m = np.ma.masked_equal( cdf, 0 )
             cdf_m = (cdf_m - cdf_m.min()) * 255 / (cdf_m.max() - cdf_m.min())
-        
+
             cdf = np.ma.filled( cdf_m, 0 ).astype( 'uint8' )
-        
+
             equalized[:, :, i] = cdf[x].reshape( img.shape[:2] ) + mask
-        
     
     return equalized
