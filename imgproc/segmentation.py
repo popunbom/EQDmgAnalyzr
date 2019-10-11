@@ -882,7 +882,7 @@ class RegionSegmentation:
         self._labels_lut = value
         
         if self.is_logging:
-            self.logger.logging_json( self._labels_lut, "labels_lut" )
+            self.logger.logging_dict( self._labels_lut, "labels_lut" )
     
     
     @property
@@ -897,7 +897,7 @@ class RegionSegmentation:
         self._relations = value
         
         if self.is_logging:
-            self.logger.logging_json( self._relations, "relations" )
+            self.logger.logging_dict( self._relations, "relations" )
     
     @property
     def scores( self ):
@@ -911,4 +911,4 @@ class RegionSegmentation:
         self._scores = value
         
         if self.is_logging:
-            self.logger.logging_json( self._scores, "scores" )
+            self.logger.logging_dict( self._scores, "scores" )
