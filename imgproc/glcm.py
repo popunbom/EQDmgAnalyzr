@@ -82,6 +82,15 @@ class GLCMFeatures:
         
         if src_img.ndim == 3:
             self.src_img = cv2.cvtColor( src_img, cv2.COLOR_BGR2GRAY )
+
+        if self.logger:
+            logger.logging_dict(
+                {
+                    "distances": distances,
+                    "degrees"  : degrees
+                },
+                "options"
+            )
     
     def calc_features( self, feature_names, use_labels=False ):
         """
@@ -101,8 +110,10 @@ class GLCMFeatures:
             取得する特徴量
         use_labels : bool
             ラベリングを行うかどうか
-            True の場合, self.labels がセットされている
+            
+            `True` の場合, `self.labels` がセットされている
             必要がある
+        
         Returns
         -------
         dict
@@ -153,6 +164,6 @@ class GLCMFeatures:
                 }
                 for i, feature in enumerate( features )
             }
-            self.logger.logging_json( features, "features", overwrite=True )
+            self.logger.logging_dict( features, "features", overwrite=True )
         
         return features
