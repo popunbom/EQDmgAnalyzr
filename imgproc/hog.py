@@ -50,7 +50,7 @@ class HoGFeature:
         
         self.options = dict(
             visualize=True,
-            feature_vector=True,
+            feature_vector=False,
             multichannel=False
         )
         
@@ -93,18 +93,17 @@ class HoGFeature:
         """
         
         self.options = dict(
-            **options,
-            **self.options
+            list( options.items() ) + list( self.options.items() )
         )
         
         self.features, self.hog_image = hog(
             self.src_img,
-            self.options
+            **self.options
         )
         
         if self.logger:
             self.logger.logging_dict( self.options, "options" )
-            self.logger.logging_ndarray( self.features )
+            self.logger.logging_ndarray( self.features, "features" )
             self.logger.logging_img( self.hog_image, "hog_image" )
         
         return self.features, self.hog_image
