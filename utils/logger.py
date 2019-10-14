@@ -395,7 +395,6 @@ class ImageLogger:
 
         """
         TYPE_ASSERT( ndarray, np.ndarray )
-        assert ndarray.ndim <= 2, "'ndarray' must be 1-D or 2-D array."
         TYPE_ASSERT( file_name, str )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
 
