@@ -20,6 +20,7 @@ from utils.convert import mamba2np, np2mamba
 from utils.logger import ImageLogger
 from utils.common import dec_debug, eprint
 from utils.exception import InvalidImageOrFile
+from utils.mpl import show_images
 
 from .edge import EdgeProcedures
 
@@ -28,82 +29,150 @@ class RegionSegmentation:
     LINE_PIXEL_VAL = np.uint8( 255 )
     LINE_LABEL_VAL = np.int16( 0 )
     
-    
     @dec_debug
-    def watershed_using_quasi_distance( self ):
+    def _watershed( self ):
+        """
+        Watershed 法による領域分割
+        
+        Returns
+        -------
+        numpy.ndarray
+            領域分割結果
+        """
+        kernel = np.array( [
+            [1, 1, 1],
+            [1, 0, 1],
+            [1, 1, 1]
+        ], dtype=np.uint8 )
+    
+        img = self.src_img
+        img_gs = cv2.cvtColor( img, cv2.COLOR_BGR2GRAY )
+    
+        thresh, img_bin = cv2.threshold( img_gs, 0, 255, cv2.THRESH_OTSU )
+        eprint( f"::Watershed::  Threshold: {thresh}" )
+    
+        # Invert Foreground and Background
+        if np.sum( img_bin == 0 ) > np.sum( img_bin == 255 ):
+            img_bin = cv2.bitwise_not( img_bin )
+    
+        # Sure Background
+        img_morph = img_bin
+        img_morph = cv2.morphologyEx(
+            img_morph, cv2.MORPH_CLOSE, kernel, iterations=1
+        )
+        img_morph = cv2.morphologyEx(
+            img_morph, cv2.MORPH_OPEN, kernel, iterations=1
+        )
+        sure_bg = img_morph
+    
+        # Distance
+        dist_transform = cv2.distanceTransform( img_morph, cv2.DIST_L2, 5 )
+    
+        # Sure Foreground
+        thresh, sure_fg = cv2.threshold(
+            dist_transform, 0.5 * dist_transform.max(), 255, 0 )
+        sure_fg = sure_fg.astype( np.uint8 )
+    
+        # Unknown Area
+        unknown = cv2.subtract( sure_bg, sure_fg )
+    
+        show_images(
+            [img_gs, img_bin, img_morph, dist_transform, sure_fg, unknown],
+            list_title=[
+                "Grayscale", "Binary", "Morph", "Distance",
+                "Foreground", "Unknown"
+            ],
+            plt_title="Temporary Images",
+            logger=self.logger
+        )
+    
+        # Marker
+        _, markers = cv2.connectedComponents( sure_fg )
+        markers += 1
+        markers[unknown == 255] = 0
+    
+        # Watershed
+        watershed = cv2.watershed( img, markers )
+    
+        show_images(
+            [img, img_bin, watershed],
+            list_title=["Input", "Binary", "Watershed"],
+            list_cmap=['gray', 'rainbow'],
+            tuple_shape=(1, 3),
+            plt_title="Result",
+            logger=self.logger
+        )
+    
+        return watershed
+
+    @dec_debug
+    def _watershed_using_quasi_distance( self ):
         """
         疑似ユークリッド距離(Quasi Distance) に基づく
         Watershed 領域分割
         
-        Parameters
-        ----------
-        logging : bool
-            作業途中の画像を保存するかどうかのフラグ
-
         Returns
         -------
-        imWts : numpy.ndarray
+        numpy.ndarray
             領域分割線の画像
-        pilim : numpy.ndarray
-            入力画像に領域分割線が描画された画像
         """
         
         # Channel Split
         if self.src_img.ndim == 3:
-            imBlue, imGreen, imRed = [np2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
+            b, g, r = [np2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
         elif self.src_img.ndim == 2:
-            imBlue, imGreen, imRed = [np2mamba( self.src_img )] * 3
+            b, g, r = [np2mamba( self.src_img )] * 3
         
         # We will perform a thick gradient on each color channel (contours in original
         # picture are more or less fuzzy) and we add all these gradients
-        gradIm = imageMb( imRed )
-        imWrk1 = imageMb( imRed )
-        gradIm.reset()
-        gradient( imRed, imWrk1, 2 )
-        add( imWrk1, gradIm, gradIm )
-        gradient( imGreen, imWrk1, 2 )
-        add( imWrk1, gradIm, gradIm )
-        gradient( imBlue, imWrk1, 2 )
-        add( imWrk1, gradIm, gradIm )
+        gradient = imageMb( r )
+        tmp_1 = imageMb( r )
+        gradient.reset()
+        gradient( r, tmp_1, 2 )
+        add( tmp_1, gradient, gradient )
+        gradient( g, tmp_1, 2 )
+        add( tmp_1, gradient, gradient )
+        gradient( b, tmp_1, 2 )
+        add( tmp_1, gradient, gradient )
         
         # Then we invert the gradient image and we compute its quasi-distance
-        qDist = imageMb( gradIm, 32 )
-        negate( gradIm, gradIm )
-        quasiDistance( gradIm, imWrk1, qDist )
+        quasi_dist = imageMb( gradient, 32 )
+        negate( gradient, gradient )
+        quasiDistance( gradient, tmp_1, quasi_dist )
         
         if self.is_logging:
-            self.logger.logging_img( imWrk1, "quasi_dist_gradient" )
-            self.logger.logging_img( qDist, "quasi_dist" )
+            self.logger.logging_img( tmp_1, "quasi_dist_gradient" )
+            self.logger.logging_img( quasi_dist, "quasi_dist" )
         
         # The maxima of the quasi-distance are extracted and filtered (too close maxima,
         # less than 6 pixels apart, are merged)
-        imWrk2 = imageMb( imRed )
-        imMark = imageMb( gradIm, 1 )
-        copyBytePlane( qDist, 0, imWrk1 )
-        subConst( imWrk1, 3, imWrk2 )
-        build( imWrk1, imWrk2 )
-        maxima( imWrk2, imMark )
+        tmp_2 = imageMb( r )
+        marker = imageMb( gradient, 1 )
+        copyBytePlane( quasi_dist, 0, tmp_1 )
+        subConst( tmp_1, 3, tmp_2 )
+        build( tmp_1, tmp_2 )
+        maxima( tmp_2, marker )
         
         # The marker-controlled watershed of the gradient is performed
-        imWts = imageMb( gradIm )
-        label( imMark, qDist )
-        negate( gradIm, gradIm )
-        watershedSegment( gradIm, qDist )
-        copyBytePlane( qDist, 3, imWts )
+        watershed = imageMb( gradient )
+        label( marker, quasi_dist )
+        negate( gradient, gradient )
+        watershedSegment( gradient, quasi_dist )
+        copyBytePlane( quasi_dist, 3, watershed )
         
         # The segmented binary and color image are stored
-        logic( imRed, imWts, imRed, "sup" )
-        logic( imGreen, imWts, imGreen, "sup" )
-        logic( imBlue, imWts, imBlue, "sup" )
-        
-        pilim = mix( imRed, imGreen, imBlue )
+        logic( r, watershed, r, "sup" )
+        logic( g, watershed, g, "sup" )
+        logic( b, watershed, b, "sup" )
+
+        segmented_image = mix( r, g, b )
         
         if self.is_logging:
-            self.logger.logging_img( pilim, "segmented_image" )
-        
-        imWts = mamba2np( imWts )
-        
-        return imWts
+            self.logger.logging_img( segmented_image, "segmented_image" )
+
+        watershed = mamba2np( watershed )
+
+        return watershed
     
     @dec_debug
     def labeling_by_segmented_img( self ):
@@ -768,6 +837,20 @@ class RegionSegmentation:
             self.logger.logging_img( line_img, "point_interpolated" )
         
         return line_img
+
+    def do_segmentation( self, method="watershed" ):
+        TYPE_ASSERT( method, str )
+    
+        if method == "watershed":
+            return self._watershed()
+        elif method == "watershed_quasi_dist":
+            return self._watershed_using_quasi_distance()
+        else:
+            raise RuntimeError(
+                "Not support method: {method}".format(
+                    method=method
+                )
+            )
     
     # Constructor
     def __init__( self, img, logging=False,
