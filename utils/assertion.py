@@ -6,7 +6,7 @@
 
 from collections.abc import Iterable
 from numbers import Number
-
+from textwrap import dedent
 import numpy as np
 
 from utils.common import get_var_name, get_qualified_class_name
@@ -214,12 +214,18 @@ def SAME_NDIM_ASSERT( ndarray_1, ndarray_2 ):
     
     TYPE_ASSERT( ndarray_1, np.ndarray )
     TYPE_ASSERT( ndarray_2, np.ndarray )
-    
-    message = "argument '{var_name_1}' and '{var_name_2}' must be dimension ({var_name_1}.ndim = {n_1}, {var_name_2}.ndim = {n_2})".format(
-        var_name_1=get_var_name( ndarray_1 ),
-        n_1=str( ndarray_1.ndim ),
-        var_name_2=get_var_name( ndarray_2 ),
-        n_2=str( ndarray_2.ndim )
+
+    message = dedent(
+        """
+        argument '{var_name_1}' and '{var_name_2}' must be dimension
+            {var_name_1}.ndim = {n_1}
+            {var_name_2}.ndim = {n_2}
+        """.format(
+            var_name_1=get_var_name( ndarray_1 ),
+            n_1=str( ndarray_1.ndim ),
+            var_name_2=get_var_name( ndarray_2 ),
+            n_2=str( ndarray_2.ndim )
+        )
     )
     
     if __debug__:
@@ -241,7 +247,6 @@ def SAME_SHAPE_ASSERT( ndarray_1, ndarray_2, ignore_ndim=False ):
     -------
 
     """
-    
     TYPE_ASSERT( ndarray_1, np.ndarray )
     TYPE_ASSERT( ndarray_2, np.ndarray )
     
@@ -251,12 +256,19 @@ def SAME_SHAPE_ASSERT( ndarray_1, ndarray_2, ignore_ndim=False ):
         shape_2 = ndarray_2.shape[:min_ndim]
     else:
         shape_1, shape_2 = ndarray_1.shape, ndarray_2.shape
-    
-    message = "argument '{var_name_1}' and '{var_name_2}' must be same shape ({var_name_1}.shape = {shape_1}, {var_name_2}.shape = {shape_2})".format(
-        var_name_1=get_var_name( ndarray_1 ),
-        shape_1=shape_1,
-        var_name_2=get_var_name( ndarray_2 ),
-        shape_2=shape_2,
+
+    message = dedent(
+        """
+        argument '{var_name_1}' and '{var_name_2}' must be same shape
+            {var_name_1}.shape = {shape_1}
+            {var_name_2}.shape = {shape_2}
+        (To ignore ndarray.ndim, set 'ignore_ndim=True')
+        """.format(
+            var_name_1=get_var_name( ndarray_1 ),
+            shape_1=shape_1,
+            var_name_2=get_var_name( ndarray_2 ),
+            shape_2=shape_2,
+        )
     )
     
     if __debug__:
