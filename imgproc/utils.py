@@ -11,8 +11,10 @@ import numpy as np
 
 from math import ceil
 
-from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDIM_ASSERT
+from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDIM_ASSERT, NDARRAY_ASSERT
 from utils.common import n_args, eprint
+
+import scipy.ndimage as ndi
 
 """
 imgproc/utils.py : 汎用的な画像処理
@@ -103,7 +105,8 @@ def compute_by_window( imgs, func, window_size=16, step=2,
                 rois = [img[i:i + w_i, j:j + w_j] for img in imgs]
                 
                 results[ii][jj] = func( *rois )
-    
+
+    eprint( "" )
     return results
 
 
@@ -281,3 +284,33 @@ def gen_overlay_by_gt( img_mask, img_gt ):
         & (img_gt == Black).all( axis=2 )] = White
     
     return dst
+
+
+def zoom_to_img_size( img, shape ):
+    """
+    画像と同じ大きさになるように拡大する
+    
+    - `img` を `shape` で指定したサイズに拡大する
+    
+    Parameters
+    ----------
+    img : numpy.ndarray
+        入力画像
+    shape : tuple of int
+        画像サイズ
+
+    Returns
+    -------
+    numpy.ndarray
+        拡大された画像
+    """
+    
+    NDARRAY_ASSERT( img )
+    TYPE_ASSERT( shape, tuple )
+    
+    return ndi.zoom(
+        img,
+        (shape[0] / img.shape[0], shape[1] / img.shape[1]),
+        order=0,
+        mode='nearest'
+    )
