@@ -11,7 +11,8 @@ from skimage.morphology import disk
 from scipy import ndimage as ndi
 
 from imgproc.edge import EdgeProcedures
-from imgproc.utils import compute_by_window
+from imgproc.hog import HoGFeature
+from imgproc.utils import compute_by_window, zoom_to_img_size
 from utils.mpl import show_images, imshow
 from utils.logger import ImageLogger
 from os import path
@@ -19,95 +20,48 @@ from os import path
 PATH_ROOT = "./img/resource"
 
 img = cv2.imread(
-    path.join(PATH_ROOT, "aerial_roi4_without_line_noise.png")
+    path.join( PATH_ROOT, "aerial_roi1_raw_denoised_clipped_ver2_equalized.png" )
+    # path.join(PATH_ROOT, "aerial_roi2_strong-denoised_clipped_equalized.png")
+    # "/Users/popunbom/Downloads/aerial_roi1_raw_denoised_test.png"
 )
-X, Y, W, H = 0, 441, 348, 287
-img = img[Y:Y + H, X:X + W]
+# X, Y, W, H = 0, 441, 348, 287
+# img = img[Y:Y + H, X:X + W]
 img_gs = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-logger = ImageLogger("./img/tmp/module_test")
+logger = ImageLogger( "./img/tmp/module_test/hog+edge" )
 
+hog = HoGFeature( img, logger )
+hog.calc_features( feature_vector=False )
 
-def fourier_hpf( in_img, threshold ):
-    def disk_mask( r, h, w ):
-        mask = disk( r )
-        p_h, p_w = (h - mask.shape[0], w - mask.shape[1])
-        mask = np.pad(
-            mask,
-            [(
-                (p_h) // 2,
-                (p_h) // 2 + (p_h % 2)
-            ), (
-                (p_w) // 2,
-                (p_w) // 2 + (p_w % 2)
-            )],
-            'constant'
-        ).astype( bool )
-        
-        return mask
-    
-    
-    if in_img.ndim == 3:
-        img_gs = cv2.cvtColor( in_img, cv2.COLOR_BGR2GRAY )
-    else:
-        img_gs = in_img
-    
-    fft = np.fft.fftshift(
-        np.fft.fft2( img_gs )
-    )
-    
-    mask = disk_mask( threshold, *img_gs.shape[:2] )
-    #     mask = np.bitwise_not(disk_mask(threshold, *img.shape[:2]))
-    
-    fft_masked = fft.copy()
-    fft_masked[mask] = 0 + 0j
-    
-    ifft = np.fft.ifft2( fft_masked )
-    
-    # Calcurate Feature
-    fd_img = compute_by_window(
-        np.abs( ifft ),
-        lambda img: np.mean( img ),
-        window_size=8,
-        step=2,
-        dst_dtype=np.float64
-    )
-    
-    fd_img = ndi.zoom(
-        fd_img / fd_img.max(),
-        (img_gs.shape[0] / fd_img.shape[0], img_gs.shape[1] / fd_img.shape[1]),
-        order=0,
-        mode='nearest'
-    )
-    
-    show_images(
-        list_img=[
-            np.log10( np.abs( fft ) ),
-            mask,
-            np.log10( np.abs( fft_masked ) ),
-            np.abs( ifft ),
-            fd_img,
-        ],
-        plt_title="HPF",
-        list_title=[
-            "Power Spector (log10)",
-            "Mask",
-            "Power Spector (masked, log10)",
-            "Image with HPF",
-            "Mean(window_size=8, step=2)",
-        ],
-        list_cmap=[
-            "jet",
-            "gray_r",
-            "jet",
-            "gray",
-            "jet",
-        ],
-        tuple_shape=(2, 3),
-        logger=logger
-    )
-    
-    return fd_img
+var = np.var(
+    hog.features,
+    axis=(2, 3, 4)
+)
 
+var = zoom_to_img_size( var / var.max(), img_gs.shape )
 
-fd_hpf = fourier_hpf(img_gs, int(min(img_gs.shape[:2]) * 0.05))
+logger.logging_img( var, "hog_variance" )
+
+edge = EdgeProcedures( img )
+
+angle_var = edge.get_feature_by_window(
+    edge.angle_variance_using_mean_vector,
+    window_size=8,
+    step=1
+)
+
+mag_stddev = edge.get_feature_by_window(
+    edge.magnitude_stddev,
+    window_size=8,
+    step=1
+)
+
+logger.logging_img( angle_var, "angle_variance" )
+logger.logging_img( mag_stddev, "magnitude_stddev" )
+
+mag_stddev /= mag_stddev.max()
+angle_var /= angle_var.max()
+
+result = angle_var * mag_stddev
+
+logger.logging_img( result, "result" )
