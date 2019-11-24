@@ -9,8 +9,8 @@ imgproc/preproc.py : 画像の前処理に関わるもの
 """
 
 import cv2
-
-from utils.assertion import *
+import numpy as np
+from utils.assertion import NDARRAY_ASSERT, TYPE_ASSERT, NDIM_ASSERT
 
 
 def unsharp( img, k=1.0, ksize=3 ):
@@ -82,7 +82,8 @@ def denoise_by_median_and_meanshift( img ):
     
     # Value: MeanShift ( spacial=8 chroma=18 )
     v = cv2.cvtColor( v, cv2.COLOR_GRAY2BGR )
-    v = cv2.pyrMeanShiftFiltering( v, sp=8, sr=18 )
+    # v = cv2.pyrMeanShiftFiltering( v, sp=8, sr=18 )
+    v = cv2.pyrMeanShiftFiltering( v, sp=20, sr=30 )
     v = cv2.cvtColor( v, cv2.COLOR_BGR2GRAY )
     
     dst = cv2.cvtColor( np.dstack( (h, s, v) ), cv2.COLOR_HSV2BGR )
