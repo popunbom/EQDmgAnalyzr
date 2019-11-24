@@ -67,7 +67,6 @@ def compute_by_window( imgs, func, window_size=16, step=2,
         n_imgs = 1
         height, width = imgs.shape[:2]
     
-    # assert callable( func ) and func.__code__.co_argcount >= n_imgs, \
     assert callable( func ) and n_args( func ) >= n_imgs, \
         "argument 'func' must be callable object which has {0} argument at least. \n".format( n_imgs ) + \
         "  ( num of argumets of 'func' depends on argument 'imgs')"
@@ -105,7 +104,7 @@ def compute_by_window( imgs, func, window_size=16, step=2,
                 rois = [img[i:i + w_i, j:j + w_j] for img in imgs]
                 
                 results[ii][jj] = func( *rois )
-
+    
     eprint( "" )
     return results
 
@@ -144,6 +143,60 @@ def get_rect( img_shape, points ):
     
     # return [yMin, yMax, xMin, xMax]
     return [(yMin, xMin), (yMax, xMax)]
+
+
+def get_window_rect( img_shape, center, wnd_size, ret_type="tuple" ):
+    """
+    中心座標から一定の大きさの矩形を切り出す
+    
+    Parameters
+    ----------
+    img_shape : tuple of ints
+        切り出す画像の形状
+        - ndarray.shape である必要がある
+    center : tuple of ints
+        中心座標: (x, y)
+    wnd_size : int
+        切り出す矩形の大きさ
+    ret_type : string
+        返却値の種類を指定
+        - `tuple` と `slice` が使用可能
+
+    Returns
+    -------
+    tuple of ints or tuple of slice
+    - ret_type が `tuple` の場合、
+      (左上のx座標、左上のy座標, 右下のx座標、右下のy座標)
+      のタプル
+    - ret_type が `slice` の場合、ndarray のスライス
+    """
+    
+    TYPE_ASSERT( img_shape, tuple )
+    TYPE_ASSERT( center, tuple )
+    TYPE_ASSERT( wnd_size, int )
+    TYPE_ASSERT( ret_type, str )
+    assert ret_type in ("tuple", "slice"), \
+        "`ret_type` must be 'tuple' or 'slice'"
+    
+    height, width = img_shape[:2]
+    cx, cy = center
+    
+    tl_x = max( 0, int( cx - wnd_size / 2 ) )
+    tl_y = max( 0, int( cy - wnd_size / 2 ) )
+    br_x = min( width, int( cx + wnd_size / 2 ) )
+    br_y = min( height, int( cy + wnd_size / 2 ) )
+    
+    if ret_type == "tuple":
+        return tuple( [tl_x, tl_y, br_x, br_y] )
+    
+    elif ret_type == "slice":
+        return np.s_[
+               cx - (wnd_size // 2):cx + (wnd_size // 2 + 1),
+               cy - (wnd_size // 2):cy + (wnd_size // 2 + 1)
+       ]
+    
+    else:
+        return None
 
 
 def divide_by_mask( img, npy_label, dir_name ):
