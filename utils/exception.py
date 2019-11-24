@@ -19,11 +19,20 @@ class InvalidImageOrFile( Exception ):
         super().__init__( *args )
 
 
-class UnsupportedDataTypes( Exception ):
+class UnsupportedDataType( Exception ):
     
     
     def __init__( self, detail: str, **kwargs ) -> None:
-        message = "Unsupported Data Types ({detail})".format(
+        message = "Data Type is unsupported: ({detail})".format(
+            detail=detail
+        )
+        super().__init__( message )
+        self.kwargs = kwargs
+
+class UnsupportedOption( Exception ):
+
+    def __init__( self, detail: str, **kwargs ) -> None:
+        message = "Option is not supported ({detail})".format(
             detail=detail
         )
         super().__init__( message )
