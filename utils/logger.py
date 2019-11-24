@@ -272,10 +272,12 @@ class ImageLogger:
                 img = self.get_psuedo_color_img( img )
             
             elif cmap != "gray":
-                # TODO: 最大値による正規化ではなく、(v_min, v_max) による正規化にする
-                if img.min() != -np.inf:
-                    img += np.fabs( img.min() )
-                img /= img.max()
+                if img.dtype != np.uint8:
+                    # TODO: 最大値による正規化ではなく、(v_min, v_max) による正規化にする
+                    if img.min() != -np.inf:
+                        img += np.fabs( img.min() )
+                    img /= img.max()
+                
                 img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )[:, :, [2, 1, 0]]
         
         if img.ndim == 3:
