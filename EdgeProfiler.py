@@ -8,6 +8,9 @@ import uuid
 import random as rnd
 from collections import deque
 
+from imgproc.utils import compute_by_window, get_window_rect
+from utils.common import eprint
+
 FLT_EPS = np.finfo( np.float32 ).eps
 
 D_LOGGING = True
@@ -28,6 +31,7 @@ def calcEdgeFeatures( src_img ):
   
   if (D_DEBUG_EXEC_CANNY):
     edge_img = cv2.Canny( src_img, 126, 174 )
+  
   else:
     edge_img = src_img
   
@@ -155,6 +159,7 @@ def pass1( img, features ):
 # エッジ線検出
 # 'length_average' の計算
 def pass3( features, img ):
+  
   isNoMorePassings = True
   NEIGHBOR = np.array( [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)] )
   passings = copy.deepcopy( features['passings'] )
@@ -171,9 +176,11 @@ def pass3( features, img ):
   n_of_edge = 0
   p = np.array( passings[0] )
   
+  
   ### MAIN ROUTINE ###
   if (D_DEBUG_3):
     print( " start !! (%d, % d)" % (p[1], p[0]) )
+  
   while (len( passings ) > 0):
     isNoMorePassings = True
     passings.remove( p.tolist() )
@@ -387,96 +394,29 @@ def saveFeatureAsCSV( TARGET_NAME, N_OF_IMGS, outToStdOut=False ):
 
 
 def proc3( src_img_path ):
+  """ エッジ特徴量を計算し可視化し、img フォルダに結果を出力する """
   src_img = cv2.imread( src_img_path, cv2.IMREAD_GRAYSCALE )
-  print( "start edge calc ... ", end="", flush=True )
+  
+  eprint( "start edge calc ... ", end="" )
+  
   features = calcEdgeFeatures( src_img )
-  print( "done !", flush=True )
+  
+  eprint( "done !" )
+  
   dst_img = getEdgeFeatureAsImage( src_img, features )
+  
   # dst_img = cv2.resize(dst_img, (0, 0), fx=3.0, fy=3.0, interpolation=cv2.INTER_NEAREST)
   # print("length: ", features['length_average'])
   
-  cv2.imshow( "Test", dst_img )
-  cv2.waitKey( 500 )
+  # cv2.imshow( "Test", dst_img )
+  # cv2.waitKey( 0 )
+  
   cv2.imwrite( "img/DEBUG1_" + str( uuid.uuid4() ) + ".png", dst_img )
+  
   return
 
-
-def proc4( src_img_path, wnd_size, feature_name ):
-  src_img = cv2.imread( src_img_path, cv2.IMREAD_COLOR )
-  
-  img_value = np.zeros( src_img.shape, dtype=np.uint8 )
-  values = np.zeros( (0) )
-  rects = []
-  
-  src_gray = cv2.cvtColor( src_img, cv2.COLOR_BGR2GRAY )
-  
-  for y in range( 0, src_img.shape[0], wnd_size ):
-    for x in range( 0, src_img.shape[0], wnd_size ):
-      if (0 <= y + wnd_size <= src_img.shape[0] and 0 <= x + wnd_size <= src_img.shape[1]):
-        features = calcEdgeFeatures( src_gray[y:y + wnd_size, x:x + wnd_size] )
-        values = np.append( values, features[feature_name] )
-        rects.append( [x, y, x + wnd_size, y + wnd_size] )
-  
-  # values /= values.max()
-  values = sr.percentileModification( values, 10 )
-  for i in range( 0, len( values ) ):
-    img_value = sr.drawRect( img_value, rects[i], values[i], rainbowColor=True )
-  
-  img = sr.createOverwrappedImage( src_img, img_value )
-  cv2.imshow( "Test", img )
-  cv2.waitKey( 0 )
-
-
-def proc5( src_img_path ):
-  src_img = cv2.imread( src_img_path, cv2.IMREAD_GRAYSCALE )
-  
-  hsv_array = getEdgeHSVArray( src_img )
-  cv2.imshow( "Angle HSV", cv2.cvtColor( hsv_array, cv2.COLOR_HSV2BGR ) )
-  cv2.waitKey( 0 )
-
-
-def proc6( src_img_path, wnd_size, feature_name ):
-  src_img = cv2.imread( src_img_path, cv2.IMREAD_COLOR )
-  img_value = np.zeros( (src_img.shape[0], src_img.shape[1]), dtype=np.float64 )
-  
-  src_gray = cv2.cvtColor( src_img, cv2.COLOR_BGR2GRAY )
-  
-  for y in range( 0, src_img.shape[0] ):
-    for x in range( 0, src_img.shape[1] ):
-      rect = [(0 if (y - int( 0.5 * wnd_size ) < 0) else y - int( 0.5 * wnd_size )),
-              (src_img.shape[0] if (y + int( 0.5 * wnd_size ) > src_img.shape[0]) else y + int( 0.5 * wnd_size )),
-              (0 if (x - int( 0.5 * wnd_size ) < 0) else x - int( 0.5 * wnd_size )),
-              (src_img.shape[1] if (x + int( 0.5 * wnd_size ) > src_img.shape[1]) else x + int( 0.5 * wnd_size ))]
-      print( "rect: ", rect )
-      features = calcEdgeFeatures( src_gray[rect[0]:rect[1], rect[2]:rect[3]] )
-      img_value[y, x] = features[feature_name]
-  
-  for i in range( 0, img_value.shape[0] ):
-    img_value[i] = sr.percentileModification( img_value[1], 10 ) * 255
-  
-  img_value = img_value.astype( np.uint8 )
-  img_value = cv2.applyColorMap( img_value, cv2.COLORMAP_RAINBOW )
-  print( "Done! " )
-  cv2.imshow( "Test", img_value )
-  cv2.waitKey( 0 )
-  img = sr.createOverwrappedImage( src_img, img_value )
-  cv2.imshow( "Test", img )
-  cv2.waitKey( 0 )
-
-
-
 if __name__ == '__main__':
-  # proc3("img/test_set/00024.png")
-  # proc3("img/test_set/00025.png")
-  # proc3("/Users/popunbom/Google Drive/IDE_Projects/ImageResource/edge2.bmp")
   proc3("img/resource/edge2.bmp")
-  # proc3( "img/resource/expr_1_aerial_customblur.png" )
-  # proc3( "img/resource/expr_2_aerial_customblur.png" )
-  # proc3("img/resource/expr_3_aerial.png")
-  # proc3("img/divided/aerial_roi1_customeblur/canny_00026.png")
-  # proc4("img/divided/new_roi1/00018.png", 7, 'angle_variance')
-  # proc5("img/divided/new_roi1/00018.png")
-  # proc6("img/divided/new_roi1/00018.png", 10, 'angle_variance')
   
   # TARGETS = ["new_roi", "new_blur_roi"]
   # N_OF_IMGS = [43, 27, 70]
