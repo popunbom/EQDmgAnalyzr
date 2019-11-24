@@ -11,7 +11,7 @@ from PIL import Image
 import mamba as mb
 
 from utils.assertion import TYPE_ASSERT
-from utils.exception import UnsupportedDataTypes
+from utils.exception import UnsupportedDataType
 
 
 def pil2np( pil_img ):
@@ -46,7 +46,7 @@ def pil2np( pil_img ):
             # RGBA -> BGRA
             npy_img = cv2.cvtColor( npy_img, cv2.COLOR_RGBA2BGRA )
         else:
-            raise UnsupportedDataTypes( "npy_img.shape = {shape}".format(
+            raise UnsupportedDataType( "npy_img.shape = {shape}".format(
                 shape=npy_img.shape
             ) )
     
@@ -77,7 +77,7 @@ def np2mamba( npy_img ):
     elif npy_img.dtype == np.float32:
         bit_depth = 32
     else:
-        raise UnsupportedDataTypes( "npy_img.dtype = {dtype}".format(
+        raise UnsupportedDataType( "npy_img.dtype = {dtype}".format(
             dtype=npy_img.dtype
         ) )
     
