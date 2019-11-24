@@ -9,6 +9,7 @@
 - SciPy
 - Matplotlib
 - scikit-learn
+- tqdm
 
 ## Author
 
