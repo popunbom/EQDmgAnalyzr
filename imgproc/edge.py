@@ -11,11 +11,12 @@ from os import path
 import cv2
 import numpy as np
 
-from skimage.filters import sobel
+from scipy.ndimage import sobel, prewitt, convolve
 
 from imgproc.utils import compute_by_window
 from utils.assertion import TYPE_ASSERT, NDIM_ASSERT, SAME_SHAPE_ASSERT
-from utils.exception import InvalidImageOrFile
+from utils.common import eprint
+from utils.exception import InvalidImageOrFile, UnsupportedOption
 
 
 class EdgeProcedures( object ):
@@ -148,20 +149,23 @@ class EdgeProcedures( object ):
         # weights /= weights.max()
         
         M_cos = np.average(
-            np.cos( np.radians( degrees ) ),
+            # np.cos( np.radians( degrees ) ),
+            np.cos( degrees ),
             weights=weights
         )
         M_sin = np.average(
-            np.sin( np.radians( degrees ) ),
+            # np.sin( np.radians( degrees ) ),
+            np.sin( degrees ),
             weights=weights
         )
 
-        # R = np.sqrt( M_cos ** 2 + M_sin ** 2 )
         R = np.hypot( M_cos, M_sin )
         
         variance = 1 - R
         
         return variance
+        # return variance * np.mean(weights)
+        # return variance * np.std(weights)
     
     @staticmethod
     def magnitude_stddev( _edge_magnitude, _edge_angle ):
@@ -186,6 +190,45 @@ class EdgeProcedures( object ):
         
         return self.detector_params
     
+    @staticmethod
+    def _prewitt( img, axis=0, ksize=3 ):
+        TYPE_ASSERT( img, np.ndarray )
+        TYPE_ASSERT( axis, int )
+        TYPE_ASSERT( ksize, int )
+        
+        assert axis <= img.ndim, \
+            "'axis' must be smaller than 'img.ndim'"
+        
+        kernel = np.zeros((ksize, ksize), dtype=np.float32)
+        
+        if axis == 0:
+            kernel[0, :], kernel[(ksize-1), :] = 1, -1
+        elif axis == 1:
+            kernel[:, 0], kernel[:, (ksize - 1)] = 1, -1
+        
+        return convolve(img, kernel)
+    
+    @staticmethod
+    def _sobel( img, axis=0, ksize=3 ):
+        TYPE_ASSERT( img, np.ndarray )
+        TYPE_ASSERT( axis, int )
+        TYPE_ASSERT( ksize, int )
+    
+        assert axis <= img.ndim, \
+            "'axis' must be smaller than 'img.ndim'"
+        
+        kernel = np.zeros((ksize, ksize), dtype=np.float32)
+        
+        if axis == 0:
+            kernel[0, :], kernel[(ksize-1), :] = 1, -1
+            kernel[0, (ksize // 2)], kernel[(ksize-1), (ksize // 2)] = 2, -2
+        elif axis == 1:
+            kernel[:, 0], kernel[:, (ksize - 1)] = 1, -1
+            kernel[(ksize // 2), 0], kernel[(ksize // 2), (ksize-1)] = 2, -2
+
+        return convolve(img, kernel)
+        
+    
     def get_magnitude( self ):
         """
         Sobel フィルタによるエッジ強度の抽出
@@ -194,20 +237,19 @@ class EdgeProcedures( object ):
         -------
         numpy.ndarray
             エッジ強度 (dtype=np.float32, [0, 1.0])
-        
-    
         """
 
-        print( "Sobel Edge Detector using Scikit-Image -- with mean" )
-        # Sobel Edge Detector
-        # dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
-        # dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
+        if self.detector_params["algorithm"] == "sobel":
+            dy = self._sobel( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
+            dx = self._sobel( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
         
-        # Edge Magnitude (Normalize to [0, 1.0])
-        # magnitude = np.sqrt( dx * dx + dy * dy )
-        # magnitude /= magnitude.max()
-
-        magnitude = sobel( self.src_img )
+        elif self.detector_params["algorithm"] == "prewitt":
+            dy = self._prewitt( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
+            dx = self._prewitt( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
+            
+        magnitude = np.hypot(dx, dy)
+        
+        magnitude /= magnitude.max()
         
         return magnitude
     
@@ -220,13 +262,18 @@ class EdgeProcedures( object ):
         numpy.ndarray
             エッジ強度(dtype=np.float32, [0°, 360°])
         """
+
+        if self.detector_params["algorithm"] == "sobel":
+            dy = self._sobel( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
+            dx = self._sobel( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
         
-        # Sobel Edge Detector
-        dx = cv2.Sobel( self.src_img, cv2.CV_32F, 1, 0, ksize=self.detector_params['ksize'] )
-        dy = cv2.Sobel( self.src_img, cv2.CV_32F, 0, 1, ksize=self.detector_params['ksize'] )
+        elif self.detector_params["algorithm"] == "prewitt":
+            dy = self._prewitt( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
+            dx = self._prewitt( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
 
         # Edge Angle (0° <= θ <= 360°)
-        angle = np.round( np.degrees( np.arctan2( dy, dx ) ) ) + 180
+        # angle = np.round( np.degrees( np.arctan2( dy, dx ) ) ) + 180
+        angle = np.arctan2( dy, dx )
         
         return angle
     
@@ -295,8 +342,9 @@ class EdgeProcedures( object ):
             NDIM_ASSERT( mask_img, 2 )
         
         magnitude, angle = self.edge_magnitude, self.edge_angle
-        
-        hue = (angle / 2).astype( np.uint8 )
+
+        # Edge Angle (0° <= θ <= 360°)
+        hue = ((np.round( np.degrees( angle ) ) + 180) / 2).astype( np.uint8 )
 
         saturation = np.ones( hue.shape, dtype=hue.dtype ) * 255
 
@@ -384,7 +432,7 @@ class EdgeProcedures( object ):
     
     
     # Constructor
-    def __init__( self, img ) -> None:
+    def __init__( self, img, ksize=3, algorithm="sobel" ) -> None:
         """
         コンストラクタ
 
@@ -395,12 +443,27 @@ class EdgeProcedures( object ):
             画像データ(numpy.ndarray)と
             画像ファイルへのパス(str)の
             両方が許容される
+        ksize : int
+            エッジ抽出におけるカーネルサイズ
+            奇数である必要がある
+        algorithm : str
+            エッジ抽出のフィルタ指定
+            以下の値が利用可能である
+            - `sobel`
+            - `prewitt`
         """
         
         # TODO: cv2.cvtColor(BGR2GRAY) と imread(IMREAD_GRAYSCALE) の結果が異なる！？
         
         TYPE_ASSERT( img, (str, np.ndarray) )
-        
+        TYPE_ASSERT( ksize, int)
+        TYPE_ASSERT( algorithm, str )
+
+        assert algorithm in ("sobel", "prewitt"), \
+            "Algorithm '{algorithm} is not support.".format(algorithm=algorithm)
+        assert ksize % 2 == 1, \
+            "'ksize' must be odd number. (ksize={ksize})".format(ksize=ksize)
+
         if isinstance( img, str ):
             if not path.exists( img ):
                 raise InvalidImageOrFile( "Cannot find file -- '{path}'".format( path=img ) )
@@ -412,10 +475,17 @@ class EdgeProcedures( object ):
                 self.src_img = cv2.cvtColor( img, cv2.COLOR_BGR2GRAY )
             else:
                 self.src_img = img.copy()
+                
+        if self.src_img.dtype == np.uint8:
+            self.src_img = self.src_img / 255
         
+        self.src_img = self.src_img.astype(np.float32)
+                
         self.detector_params = {
-            'ksize': 3
+            "ksize": ksize,
+            "algorithm": algorithm
         }
+        eprint("Edge params:", self.detector_params)
         
         self._edge_magnitude = None
         self._edge_angle = None
