@@ -9,6 +9,15 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils.common import eprint
+
+_DEFAULT_FIG_SIZE = (4, 4)
+
+def switch_backend( new_backend ):
+    old_backend = plt.get_backend()
+    plt.switch_backend( new_backend )
+    eprint( "Matplotlib: Switch Backend from {0} to {1}".format( old_backend, new_backend ) )
+
 
 def _bgr2rgb( img ):
     _ch = img.shape[2]
@@ -20,7 +29,7 @@ def _bgr2rgb( img ):
     )
 
 
-def imshow( img, fig_name="Image", fig_size=(6, 6), cmap='gray', logger=None ):
+def imshow( img, fig_name="Image", fig_size=_DEFAULT_FIG_SIZE, cmap='gray', logger=None ):
     """
     matplotlib を利用した画像表示をカンタンに行う関数
 
@@ -64,7 +73,7 @@ def imshow( img, fig_name="Image", fig_size=(6, 6), cmap='gray', logger=None ):
     plt.show()
 
 
-def show_images( list_img, plt_title=None, list_title=None, list_cmap=None, tuple_shape=None, fig_size=(6, 6),
+def show_images( list_img, plt_title=None, list_title=None, list_cmap=None, tuple_shape=None, fig_size=_DEFAULT_FIG_SIZE,
                  logger=None ):
     """
 
