@@ -119,12 +119,15 @@ class GLCMFeatures:
         dict
             特徴量データ
         """
-        TYPE_ASSERT( feature_names, list )
+        TYPE_ASSERT( feature_names, (list, str) )
         TYPE_ASSERT( use_labels, bool )
         
         keys_and_indices = list(
             product( enumerate( self.distances ), enumerate( self.degrees ) )
         )
+        
+        if isinstance(feature_names, str):
+            feature_names = [ feature_names ]
         
         def _calc_features( _img, _feature_names ):
             eprint( "Calculating GLCM [ image.shape = {shape} ] ... ".format(
@@ -156,14 +159,24 @@ class GLCMFeatures:
             features = _calc_features( self.src_img, feature_names )
         
         if self.logger:
-            features = {
-                "label_{i}".format( i=i ): {
+            
+            if use_labels:
+                features = {
+                    "label_{i}".format( i=i ): {
+                        feature_name: { str( k ): v
+                                        for k, v in values.items() }
+                        for feature_name, values in feature.items()
+                    }
+                    for i, feature in enumerate( features )
+                }
+            
+            else:
+                features = {
                     feature_name: { str( k ): v
                                     for k, v in values.items() }
-                    for feature_name, values in feature.items()
+                    for feature_name, values in features.items()
                 }
-                for i, feature in enumerate( features )
-            }
+            
             self.logger.logging_dict( features, "features", overwrite=True )
         
         return features
