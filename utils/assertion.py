@@ -9,7 +9,7 @@ from numbers import Number
 from textwrap import dedent
 import numpy as np
 
-from utils.common import get_var_name, get_qualified_class_name
+from utils.reflection import get_var_name, get_qualified_class_name
 
 
 def _IS_EMPTY( var ):
