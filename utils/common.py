@@ -75,3 +75,22 @@ def dec_debug( func ):
 
 def n_args( func ):
     return func.__code__.co_argcount
+
+
+def check_module_avaliable( lib_name ):
+    """
+    モジュールが利用可能かチェックする
+    Parameters
+    ----------
+    lib_name : str
+        モジュール名
+
+    Returns
+    -------
+    bool
+        モジュールが利用可能かどうか
+    """
+    
+    from importlib.util import find_spec
+    
+    return find_spec( lib_name ) is not None
