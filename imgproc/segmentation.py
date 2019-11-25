@@ -4,25 +4,22 @@
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/06/21
 
-from mamba import (
-    imageMb, gradient, add, negate,
-    quasiDistance, copyBytePlane,
-    subConst, build, maxima, label,
-    watershedSegment, logic, mix,
-)
 from os import path
 import cv2
 import numpy as np
 from scipy.stats import entropy
 
 from utils.assertion import NDARRAY_ASSERT, TYPE_ASSERT
-from utils.convert import mamba2np, np2mamba
 from utils.logger import ImageLogger
 from utils.common import dec_debug, eprint
 from utils.exception import InvalidImageOrFile
 from utils.mpl import show_images
 
 from .edge import EdgeProcedures
+
+from utils.common import check_module_avaliable
+
+MAMBA_AVAILABLE = check_module_avaliable( "mamba" )
 
 
 class RegionSegmentation:
@@ -44,17 +41,17 @@ class RegionSegmentation:
             [1, 0, 1],
             [1, 1, 1]
         ], dtype=np.uint8 )
-    
+
         img = self.src_img
         img_gs = cv2.cvtColor( img, cv2.COLOR_BGR2GRAY )
-    
+
         thresh, img_bin = cv2.threshold( img_gs, 0, 255, cv2.THRESH_OTSU )
         eprint( f"::Watershed::  Threshold: {thresh}" )
-    
+
         # Invert Foreground and Background
         if np.sum( img_bin == 0 ) > np.sum( img_bin == 255 ):
             img_bin = cv2.bitwise_not( img_bin )
-    
+
         # Sure Background
         img_morph = img_bin
         img_morph = cv2.morphologyEx(
@@ -64,18 +61,18 @@ class RegionSegmentation:
             img_morph, cv2.MORPH_OPEN, kernel, iterations=1
         )
         sure_bg = img_morph
-    
+
         # Distance
         dist_transform = cv2.distanceTransform( img_morph, cv2.DIST_L2, 5 )
-    
+
         # Sure Foreground
         thresh, sure_fg = cv2.threshold(
             dist_transform, 0.5 * dist_transform.max(), 255, 0 )
         sure_fg = sure_fg.astype( np.uint8 )
-    
+
         # Unknown Area
         unknown = cv2.subtract( sure_bg, sure_fg )
-    
+
         show_images(
             [img_gs, img_bin, img_morph, dist_transform, sure_fg, unknown],
             list_title=[
@@ -85,15 +82,15 @@ class RegionSegmentation:
             plt_title="Temporary Images",
             logger=self.logger
         )
-    
+
         # Marker
         _, markers = cv2.connectedComponents( sure_fg )
         markers += 1
         markers[unknown == 255] = 0
-    
+
         # Watershed
         watershed = cv2.watershed( img, markers )
-    
+
         show_images(
             [img, img_bin, watershed],
             list_title=["Input", "Binary", "Watershed"],
@@ -102,77 +99,88 @@ class RegionSegmentation:
             plt_title="Result",
             logger=self.logger
         )
-    
-        return watershed
-
-    @dec_debug
-    def _watershed_using_quasi_distance( self ):
-        """
-        疑似ユークリッド距離(Quasi Distance) に基づく
-        Watershed 領域分割
-        
-        Returns
-        -------
-        numpy.ndarray
-            領域分割線の画像
-        """
-        
-        # Channel Split
-        if self.src_img.ndim == 3:
-            b, g, r = [np2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
-        elif self.src_img.ndim == 2:
-            b, g, r = [np2mamba( self.src_img )] * 3
-        
-        # We will perform a thick gradient on each color channel (contours in original
-        # picture are more or less fuzzy) and we add all these gradients
-        gradient = imageMb( r )
-        tmp_1 = imageMb( r )
-        gradient.reset()
-        gradient( r, tmp_1, 2 )
-        add( tmp_1, gradient, gradient )
-        gradient( g, tmp_1, 2 )
-        add( tmp_1, gradient, gradient )
-        gradient( b, tmp_1, 2 )
-        add( tmp_1, gradient, gradient )
-        
-        # Then we invert the gradient image and we compute its quasi-distance
-        quasi_dist = imageMb( gradient, 32 )
-        negate( gradient, gradient )
-        quasiDistance( gradient, tmp_1, quasi_dist )
-        
-        if self.is_logging:
-            self.logger.logging_img( tmp_1, "quasi_dist_gradient" )
-            self.logger.logging_img( quasi_dist, "quasi_dist" )
-        
-        # The maxima of the quasi-distance are extracted and filtered (too close maxima,
-        # less than 6 pixels apart, are merged)
-        tmp_2 = imageMb( r )
-        marker = imageMb( gradient, 1 )
-        copyBytePlane( quasi_dist, 0, tmp_1 )
-        subConst( tmp_1, 3, tmp_2 )
-        build( tmp_1, tmp_2 )
-        maxima( tmp_2, marker )
-        
-        # The marker-controlled watershed of the gradient is performed
-        watershed = imageMb( gradient )
-        label( marker, quasi_dist )
-        negate( gradient, gradient )
-        watershedSegment( gradient, quasi_dist )
-        copyBytePlane( quasi_dist, 3, watershed )
-        
-        # The segmented binary and color image are stored
-        logic( r, watershed, r, "sup" )
-        logic( g, watershed, g, "sup" )
-        logic( b, watershed, b, "sup" )
-
-        segmented_image = mix( r, g, b )
-        
-        if self.is_logging:
-            self.logger.logging_img( segmented_image, "segmented_image" )
-
-        watershed = mamba2np( watershed )
 
         return watershed
+
+    if MAMBA_AVAILABLE:
+        @dec_debug
+        def _watershed_using_quasi_distance( self ):
+            """
+            疑似ユークリッド距離(Quasi Distance) に基づく
+            Watershed 領域分割
+            
+            Returns
+            -------
+            numpy.ndarray
+                領域分割線の画像
+            """
+        
+            from mamba import (
+                imageMb, gradient, add, negate,
+                quasiDistance, copyBytePlane,
+                subConst, build, maxima, label,
+                watershedSegment, logic, mix,
+            )
+        
+            from utils.convert import mamba2np, np2mamba
+        
+        
+            # Channel Split
+            if self.src_img.ndim == 3:
+                b, g, r = [np2mamba( self.src_img[:, :, i] ) for i in range( 3 )]
+            elif self.src_img.ndim == 2:
+                b, g, r = [np2mamba( self.src_img )] * 3
+        
+            # We will perform a thick gradient on each color channel (contours in original
+            # picture are more or less fuzzy) and we add all these gradients
+            gradient = imageMb( r )
+            tmp_1 = imageMb( r )
+            gradient.reset()
+            gradient( r, tmp_1, 2 )
+            add( tmp_1, gradient, gradient )
+            gradient( g, tmp_1, 2 )
+            add( tmp_1, gradient, gradient )
+            gradient( b, tmp_1, 2 )
+            add( tmp_1, gradient, gradient )
+        
+            # Then we invert the gradient image and we compute its quasi-distance
+            quasi_dist = imageMb( gradient, 32 )
+            negate( gradient, gradient )
+            quasiDistance( gradient, tmp_1, quasi_dist )
+        
+            if self.is_logging:
+                self.logger.logging_img( tmp_1, "quasi_dist_gradient" )
+                self.logger.logging_img( quasi_dist, "quasi_dist" )
+        
+            # The maxima of the quasi-distance are extracted and filtered (too close maxima,
+            # less than 6 pixels apart, are merged)
+            tmp_2 = imageMb( r )
+            marker = imageMb( gradient, 1 )
+            copyBytePlane( quasi_dist, 0, tmp_1 )
+            subConst( tmp_1, 3, tmp_2 )
+            build( tmp_1, tmp_2 )
+            maxima( tmp_2, marker )
+        
+            # The marker-controlled watershed of the gradient is performed
+            watershed = imageMb( gradient )
+            label( marker, quasi_dist )
+            negate( gradient, gradient )
+            watershedSegment( gradient, quasi_dist )
+            copyBytePlane( quasi_dist, 3, watershed )
+        
+            # The segmented binary and color image are stored
+            logic( r, watershed, r, "sup" )
+            logic( g, watershed, g, "sup" )
+            logic( b, watershed, b, "sup" )
+        
+            segmented_image = mix( r, g, b )
+        
+            if self.is_logging:
+                self.logger.logging_img( segmented_image, "segmented_image" )
+        
+            watershed = mamba2np( watershed )
+        
+            return watershed
     
     @dec_debug
     def labeling_by_segmented_img( self ):
@@ -840,7 +848,7 @@ class RegionSegmentation:
 
     def do_segmentation( self, method="watershed" ):
         TYPE_ASSERT( method, str )
-    
+
         if method == "watershed":
             return self._watershed()
         elif method == "watershed_quasi_dist":

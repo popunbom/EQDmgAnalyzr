@@ -11,12 +11,14 @@ import time
 import cv2 as cv2
 import numpy as np
 from PIL import Image
-from mamba import imageMb
 from matplotlib import cm as colormap
 
 from utils.assertion import TYPE_ASSERT, NDARRAY_ASSERT
-from utils.convert import pil2np, mamba2np
+from utils.convert import pil2np
 
+from utils.common import check_module_avaliable
+
+MAMBA_AVAILABLE = check_module_avaliable( "mamba" )
 
 class ImageLogger:
     """
@@ -242,7 +244,14 @@ class ImageLogger:
         -------
 
         """
-        TYPE_ASSERT( _img, [np.ndarray, Image.Image, imageMb] )
+        if MAMBA_AVAILABLE:
+            from mamba import imageMb
+            from utils.convert import mamba2np
+    
+            TYPE_ASSERT( _img, [np.ndarray, Image.Image, imageMb] )
+        else:
+            TYPE_ASSERT( _img, [np.ndarray, Image.Image] )
+            
         TYPE_ASSERT( file_name, str )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
         
@@ -259,7 +268,7 @@ class ImageLogger:
         # Data conversion (PIL.Image, imageMb --> numpy.ndarray)
         if isinstance( img, Image.Image ):
             img = pil2np( img )
-        elif isinstance( img, imageMb ):
+        elif MAMBA_AVAILABLE and isinstance( img, imageMb ):
             img = mamba2np( img )
 
         if img.ndim == 2:

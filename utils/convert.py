@@ -8,11 +8,13 @@
 import cv2
 import numpy as np
 from PIL import Image
-import mamba as mb
 
 from utils.assertion import TYPE_ASSERT
 from utils.exception import UnsupportedDataType
 
+from utils.common import check_module_avaliable
+
+MAMBA_AVAILABLE = check_module_avaliable( "mamba" )
 
 def pil2np( pil_img ):
     """
@@ -53,59 +55,63 @@ def pil2np( pil_img ):
     return npy_img
 
 
-def np2mamba( npy_img ):
-    """
-    numpy.ndarray を mamba.base.imageMb に変換する
-
-    Parameters
-    ----------
-    npy_img : numpy.ndarray
-        変換元の numpy.ndarray 画像データ
-
-    Returns
-    -------
-    mamba.base.imageMb
-        変換された mamba.base.imageMb 画像データ
-    """
+if MAMBA_AVAILABLE:
+    import mamba as mb
     
-    TYPE_ASSERT( npy_img, np.ndarray )
     
-    if npy_img.dtype == np.bool:
-        bit_depth = 1
-    elif npy_img.dtype == np.uint8:
-        bit_depth = 8
-    elif npy_img.dtype == np.float32:
-        bit_depth = 32
-    else:
-        raise UnsupportedDataType( "npy_img.dtype = {dtype}".format(
-            dtype=npy_img.dtype
-        ) )
+    def np2mamba( npy_img ):
+        """
+        numpy.ndarray を mamba.base.imageMb に変換する
     
-    mb_img = mb.imageMb( npy_img.shape[1], npy_img.shape[0], bit_depth )
+        Parameters
+        ----------
+        npy_img : numpy.ndarray
+            変換元の numpy.ndarray 画像データ
     
-    if npy_img.ndim == 3:
-        npy_img = cv2.cvtColor( npy_img, cv2.COLOR_BGR2RGB )
+        Returns
+        -------
+        mamba.base.imageMb
+            変換された mamba.base.imageMb 画像データ
+        """
+        
+        TYPE_ASSERT( npy_img, np.ndarray )
+        
+        if npy_img.dtype == np.bool:
+            bit_depth = 1
+        elif npy_img.dtype == np.uint8:
+            bit_depth = 8
+        elif npy_img.dtype == np.float32:
+            bit_depth = 32
+        else:
+            raise UnsupportedDataType( "npy_img.dtype = {dtype}".format(
+                dtype=npy_img.dtype
+            ) )
+        
+        mb_img = mb.imageMb( npy_img.shape[1], npy_img.shape[0], bit_depth )
+        
+        if npy_img.ndim == 3:
+            npy_img = cv2.cvtColor( npy_img, cv2.COLOR_BGR2RGB )
+        
+        mb.PIL2Mamba( Image.fromarray( npy_img ), mb_img )
+        
+        return mb_img
     
-    mb.PIL2Mamba( Image.fromarray( npy_img ), mb_img )
     
-    return mb_img
-
-
-# mamba.base.imageMb --> numpy.ndarray
-def mamba2np( mb_img ):
-    """
-    mamba.base.imageMb を numpy.ndarray に変換する
-
-    Parameters
-    ----------
-    mb_img : mamba.base.imageMb
-        変換元の mamba.base.imageMb 画像データ
-
-    Returns
-    -------
-    numpy.ndarray
-        変換された numpy.ndarray 画像データ
-    """
-    TYPE_ASSERT( mb_img, mb.imageMb )
+    # mamba.base.imageMb --> numpy.ndarray
+    def mamba2np( mb_img ):
+        """
+        mamba.base.imageMb を numpy.ndarray に変換する
     
-    return pil2np( mb.Mamba2PIL( mb_img ) )
+        Parameters
+        ----------
+        mb_img : mamba.base.imageMb
+            変換元の mamba.base.imageMb 画像データ
+    
+        Returns
+        -------
+        numpy.ndarray
+            変換された numpy.ndarray 画像データ
+        """
+        TYPE_ASSERT( mb_img, mb.imageMb )
+        
+        return pil2np( mb.Mamba2PIL( mb_img ) )
