@@ -11,7 +11,14 @@
 - scikit-learn
 - tqdm
 
+## Setup
+
+```bash
+./setup.sh
+source ./venv/bin/activate
+```
+
 ## Author
 
-Fumiya Endou (endo.fumiya.14@shizuoka.ac.jp)
+Fumiya Endou <endo.fumiya.14@shizuoka.ac.jp>
 
