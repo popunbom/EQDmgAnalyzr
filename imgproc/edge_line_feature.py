@@ -70,7 +70,7 @@ class EdgeLineFeatures:
         "BG"       : 0,
         "endpoint" : 1,
         "branch"   : 2,
-        "passing" : 3,
+        "passing"  : 3,
     }
     
     DONT_CARE = -1
@@ -202,7 +202,7 @@ class EdgeLineFeatures:
         COLORS = {
             # [B, G, R] の順番
             "passing" : [255, 128, 128],
-            "branch" : [0, 0, 255],
+            "branch"  : [0, 0, 255],
             "endpoint": [0, 255, 255]
         }
         
@@ -213,9 +213,9 @@ class EdgeLineFeatures:
         
         for type, color in COLORS.items():
             img[classified == LABELS[type]] = color
-            
-        return img
         
+        return img
+    
     def classify_pixel( self ):
         """
         エッジ画素分類を行う
@@ -243,8 +243,8 @@ class EdgeLineFeatures:
         height, width = self.img.shape[:2]
         
         # 全画素ループ (tqdm で進捗可視化)
-        for i in trange( height, desc="Height", leave=False ):
-            for j in trange( width, desc="Width", leave=False ):
+        for i in trange( 1, height - 1, desc="Height", leave=False ):
+            for j in trange( 1, width - 1, desc="Width", leave=False ):
                 
                 # 背景画素だったらスキップ
                 if (img[i, j] == BG):
@@ -281,8 +281,8 @@ class EdgeLineFeatures:
         classified[classified == LABELS["UNDEFINED"]] = LABELS["passing"]
         
         if logger:
-            logger.logging_img(classified, "classified")
-            logger.logging_img(self.get_as_image(), "classified_visualized")
+            logger.logging_img( classified, "classified" )
+            logger.logging_img( self.get_as_image(), "classified_visualized" )
         
         return classified
     
@@ -325,7 +325,7 @@ class EdgeLineFeatures:
         metrics["average_length"] = np.count_nonzero( extracted ) / n_labels
         
         if logger:
-            logger.logging_dict(metrics, "metrics")
-            logger.logging_img(labels, "edge_lines", cmap="jet")
-
+            logger.logging_dict( metrics, "metrics" )
+            logger.logging_img( labels, "edge_lines", cmap="jet" )
+        
         return metrics
