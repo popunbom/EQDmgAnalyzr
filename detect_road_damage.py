@@ -52,54 +52,39 @@ def detect_road_damage( result, road_mask, logger=None ):
     NDARRAY_ASSERT( result, ndim=2, dtype=np.bool )
     NDARRAY_ASSERT( road_mask, ndim=2, dtype=np.bool )
     SAME_SHAPE_ASSERT( result, road_mask )
-    
-    # 道路マスクに Sobel → 細線化 を適用する
-    skel = skeletonize(
-        sobel( road_mask ).astype( bool ),
-        method="zhang"
-    )
+
+    # 1. 建物被害結果に道路マスクを適用
+
+    result_extracted = result * road_mask
+    result_extracted = (result_extracted * 255).astype( np.uint8 )
     
     if logger:
-        logger.logging_img( skel, "skeletonize" )
-    
-    # 建物被害結果から距離画像を作成する
+        logger.logging_img( result_extracted, "result_extracted" )
+
+    # 2. 1. の画像から距離画像を作成する
     dist = cv2.distanceTransform(
-        ( result * 255 ).astype(np.uint8),
+        result_extracted,
         cv2.DIST_L2,
         maskSize=5
     )
+    dist = (dist / dist.max() * 255).astype( np.uint8 )
     
     if logger:
-        logger.logging_img( dist, "distance", cmap="jet" )
-    
-    # Ver.1: 道路境界線上の距離値のみを抽出する
-    # scores = dist * skel.astype( np.float32 )
-    # TODO: 2値化でOKか？
-    # scores[scores > 0] = 1
-    
-    # Ver.2: 距離画像を道路マスクでマスキング
-    
-    scores = dist * road_mask
-    
-    scores = ((scores / scores.max()) * 255).astype(np.uint8)
-    
-    if logger:
-        logger.logging_img( scores, "scores" )
-        logger.logging_img( scores, "scores_visualize", cmap="jet" )
-    
-    plt.imshow( scores, cmap="jet" )
-    plt.show()
-    
-    return scores
+        logger.logging_img( dist, "distance", cmap="gray" )
+        logger.logging_img( dist, "distance_visualized", cmap="jet" )
+
+    return dist
 
 
 if __name__ == '__main__':
     
     DIR_ROAD_MASK = "./img/resource/road_mask"
-    DIR_RESULT = "./tmp/find_threshold/20191121_165941_aerial_roi2_raw"
+    DIR_RESULT = "./tmp/find_threshold/20191115_134949_aerial_roi1_raw_denoised_clipped"
+    # DIR_RESULT = "./tmp/find_threshold/20191121_165941_aerial_roi2_raw"
     
     road_mask = cv2.imread(
-        path.join( DIR_ROAD_MASK, "aerial_roi2.png" ),
+        path.join( DIR_ROAD_MASK, "aerial_roi1.png" ),
+        # path.join( DIR_ROAD_MASK, "aerial_roi2.png" ),
         cv2.IMREAD_GRAYSCALE
     ).astype(bool)
     
