@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import sys
 import time
+import json
 
 import cv2 as cv2
 import numpy as np
@@ -14,11 +15,11 @@ from PIL import Image
 from matplotlib import cm as colormap
 
 from utils.assertion import TYPE_ASSERT, NDARRAY_ASSERT
+from utils.common import check_module_avaliable, eprint
 from utils.convert import pil2np
 
-from utils.common import check_module_avaliable
-
 MAMBA_AVAILABLE = check_module_avaliable( "mamba" )
+
 
 class ImageLogger:
     """
@@ -53,11 +54,9 @@ class ImageLogger:
         return
     
     def _logging_msg( self, *args, end="\n" ):
-        msg = "::ImageLogging:: " + ' '.join( [str( e ) for e in args] ) + end
-        sys.stderr.write( msg )
-        sys.stderr.flush()
-
-    def _check_overwrite( self, allow_overwrite, file_path ):
+        eprint( "::ImageLogging::", *args, end )
+    
+    def _check_overwrite( self, _allow_overwrite, _file_path ):
         """
         ファイルの存在チェック
         
@@ -68,26 +67,72 @@ class ImageLogger:
         
         Parameters
         ----------
-        allow_overwrite : bool
+        _allow_overwrite : bool
             ファイルの上書き可否
             
-        file_path : Path-like object
+        _file_path : Path-like object
             ファイルへの絶対パス
 
         Returns
         -------
 
         """
-        if os.path.exists( file_path ):
+        if os.path.exists( _file_path ):
             
-            if allow_overwrite:
-                self._logging_msg( f"File will be removed -- '{file_path}'" )
-                os.remove( file_path )
+            if _allow_overwrite:
+                self._logging_msg( f"File will be overwritten -- '{_file_path}'" )
+                self._logging_msg( f"File will be removed -- '{_file_path}'" )
+                os.remove( _file_path )
             
             else:
                 raise FileExistsError( "File already exists ! -- '{file_path}'".format(
-                    file_path=file_path
+                    file_path=_file_path
                 ) )
+    
+    def _generate_save_path( self, _file_name, _ext, _sub_path="", _overwrite=False ):
+        """
+        ファイルの保存先パスの生成
+        
+        Parameters
+        ----------
+        _file_name : str
+            保存ファイル名
+            - 拡張子がついている場合は無視される
+        _ext : str
+            保存ファイルの拡張子
+        _sub_path : str, default ""
+            サブフォルダの名称
+            省略された場合は、直下に作成される
+        _overwrite : bool
+            ファイルを上書きをするかどうかのフラグ
+
+        Returns
+        -------
+        str
+            ファイルの保存先パス
+        """
+        
+        TYPE_ASSERT( _file_name, str )
+        TYPE_ASSERT( _ext, str )
+        TYPE_ASSERT( _sub_path, str, allow_empty=True ),
+        TYPE_ASSERT( _overwrite )
+        
+        assert _ext.startswith("."), "argument '_ext' must be started by '.'"
+        
+        # Generate saving path
+        save_path = os.path.join( self.dir_path, _file_name )
+        base_name, ext = os.path.splitext( _file_name )
+        
+        if ext:
+            self._logging_msg( "Warning: File extension in 'file_name' is ignored." )
+        ext = _ext
+        
+        save_path = os.path.join( self.dir_path, _sub_path, base_name + ext )
+        
+        # Check file existence
+        self._check_overwrite( _overwrite, save_path )
+        
+        return save_path
     
     def __init__( self, base_path, suffix="", prefix="", separator='_', fmt_timestamp="%Y%m%d_%H%M%S" ) -> None:
         """
@@ -212,7 +257,7 @@ class ImageLogger:
         
         return psuedo_color_img
     
-    def logging_img( self, _img, file_name, overwrite=False, do_pseudo_color=False, cmap="gray" ):
+    def logging_img( self, _img, file_name, sub_path="", overwrite=False, do_pseudo_color=False, cmap="gray" ):
         """
         画像をロギングする処理
 
@@ -229,13 +274,16 @@ class ImageLogger:
             name には拡張子を含んでいた場合でも、データ形式
             によって拡張子が PNG または TIFF に変換される
             (詳細は img 引数の説明に記載)
-        overwrite : bool
+        sub_path : str, default ""
+            フォルダ内に作成するサブフォルダの名称
+            省略された場合は、直下に作成される
+        overwrite : bool, default False
             すでに name で指定された画像が存在していた場合に
             上書きをするかどうかのフラグ
-        do_pseudo_color : bool
+        do_pseudo_color : bool, default False
             疑似カラー処理を施すかどうか
             img がグレースケール時のみ有効
-        cmap : str
+        cmap : str, default "gray"
             matplotlib のカラーマップ
             img がグレースケール かつ do_pseudo_color が
             Falseのとき有効
@@ -247,31 +295,40 @@ class ImageLogger:
         if MAMBA_AVAILABLE:
             from mamba import imageMb
             from utils.convert import mamba2np
-    
+            
             TYPE_ASSERT( _img, [np.ndarray, Image.Image, imageMb] )
         else:
             TYPE_ASSERT( _img, [np.ndarray, Image.Image] )
-            
+        
         TYPE_ASSERT( file_name, str )
+        TYPE_ASSERT( sub_path, str, allow_empty=True )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
+        TYPE_ASSERT( do_pseudo_color, bool )
+        TYPE_ASSERT( cmap, str )
+        
+        # Init: Deep-copy image
+        img = _img.copy()
         
         # Generate file path
-        save_path = os.path.join( self.dir_path, file_name )
-        # TODO: 拡張子ありの際の Warning を出す？
-        # file_name = os.path.splitext( file_name )[0]
+        save_path = self._generate_save_path(
+            _file_name=file_name,
+            _ext=".png" if img.dtype == np.uint8 else ".tiff",
+            _sub_path=sub_path,
+            _overwrite=overwrite
+        )
         
-        # Check file existence
-        self._check_overwrite( overwrite, save_path )
-        
-        img = _img.copy()
+        ########################
+        # Generate output file #
+        ########################
         
         # Data conversion (PIL.Image, imageMb --> numpy.ndarray)
         if isinstance( img, Image.Image ):
             img = pil2np( img )
         elif MAMBA_AVAILABLE and isinstance( img, imageMb ):
             img = mamba2np( img )
-
+        
         if img.ndim == 2:
+            
             # Convert data depth
             if img.dtype not in [np.uint8, np.float32]:
                 img = img.astype( np.float32 )
@@ -289,17 +346,11 @@ class ImageLogger:
                 
                 img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )[:, :, [2, 1, 0]]
         
-        if img.ndim == 3:
-            if img.dtype != np.uint8:
-                img += np.fabs( img.min() )
-                img = (img / img.max() * 255).astype( np.uint8 )
+        elif img.dtype != np.uint8:
+            img += np.fabs( img.min() )
+            img = (img / img.max() * 255).astype( np.uint8 )
         
         # Write file
-        if img.dtype != np.uint8:
-            save_path = os.path.join( self.dir_path, file_name + ".tiff" )
-        else:
-            save_path = os.path.join( self.dir_path, file_name + ".png" )
-        
         if cv2.imwrite( save_path, img ):
             
             self._logging_msg( "Logging Image succesfully ! -- {save_path}".format(
@@ -307,8 +358,8 @@ class ImageLogger:
             ) )
         
         return
-
-    def logging_dict( self, dict_obj, file_name, overwrite=False ):
+    
+    def logging_dict( self, dict_obj, file_name, sub_path="", overwrite=False, force_cast_to_str=False ):
         """
         dict を JSON としてロギング
 
@@ -323,11 +374,15 @@ class ImageLogger:
             ファイル名
             拡張子を含んでいた場合でも ".json" に変換
             される
-
+        sub_path : str, default ""
+            フォルダ内に作成するサブフォルダの名称
+            省略された場合は、直下に作成される
         overwrite : bool
             すでに file_name で指定されたファイルが存在
             していた場合に上書きをするかどうかのフラグ
-
+        force_cast_to_str : bool
+            _jsonize 関数内での型チェックに失敗した場合に、str() でキャストした
+            結果を格納するかどうか
         Returns
         -------
 
@@ -348,23 +403,33 @@ class ImageLogger:
                 # return obj.item()
             
             else:
-                raise TypeError(
-                    "'{obj_class}' is not support for Serialize at '_jsonize'".format(
-                        obj_class=type( obj )
+                if not force_cast_to_str:
+                    raise TypeError(
+                        "'{obj_class}' is not support for Serialize at '_jsonize'".format(
+                            obj_class=type( obj )
+                        )
                     )
-                )
+                else:
+                    return str( obj )
+        
         
         TYPE_ASSERT( dict_obj, dict, allow_empty=True )
         TYPE_ASSERT( file_name, str )
+        TYPE_ASSERT( sub_path, str, allow_empty=True )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
+        TYPE_ASSERT( force_cast_to_str, bool )
         
-        import json
+        # Generate save path
+        save_path = self._generate_save_path(
+            _file_name=file_name,
+            _ext=".json",
+            _sub_path=sub_path,
+            _overwrite=overwrite
+        )
         
-        file_name = os.path.splitext( file_name )[0] + ".json"
-        save_path = os.path.join( self.dir_path, file_name )
-
-        self._check_overwrite( overwrite, save_path )
-
+        ########################
+        # Generate output file #
+        ########################
         with open( save_path, "wt" ) as f:
             result = json.dump( dict_obj,
                                 f,
@@ -380,8 +445,8 @@ class ImageLogger:
             ) )
         
         return
-
-    def logging_ndarray( self, ndarray, file_name, overwrite=False ):
+    
+    def logging_ndarray( self, ndarray, file_name, sub_path="", overwrite=False ):
         """
         numpy.ndarray をロギングする
         
@@ -391,12 +456,13 @@ class ImageLogger:
         ----------
         ndarray : numpy.ndarray
             保存する numpy.ndarray
-        
         file_name : str
             ファイル名
             拡張子を含んでいた場合でも ".npy" に変換
             される
-
+        sub_path : str, default ""
+            フォルダ内に作成するサブフォルダの名称
+            省略された場合は、直下に作成される
         overwrite : bool
             すでに file_name で指定されたファイルが存在
             していた場合に上書きをするかどうかのフラグ
@@ -407,17 +473,21 @@ class ImageLogger:
         """
         TYPE_ASSERT( ndarray, np.ndarray )
         TYPE_ASSERT( file_name, str )
+        TYPE_ASSERT( sub_path, str, allow_empty=True )
         TYPE_ASSERT( overwrite, bool, allow_empty=True )
 
-        file_name = os.path.splitext( file_name )[0] + ".npy"
-        save_path = os.path.join( self.dir_path, file_name )
-
-        self._check_overwrite( overwrite, save_path )
-
+        # Generate save path
+        save_path = self._generate_save_path(
+            _file_name=file_name,
+            _ext=".npy",
+            _sub_path=sub_path,
+            _overwrite=overwrite
+        )
+        
         np.save( save_path, ndarray )
-
+        
         self._logging_msg( "Logging NPY successfully -- {save_path}".format(
             save_path=save_path
         ) )
-
+        
         return
