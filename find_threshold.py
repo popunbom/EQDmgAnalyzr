@@ -29,31 +29,7 @@ from utils.evaluation import evaluation_by_confusion_matrix
 
 PRECISION = 10
 
-def in_range_percentile(arr, q):
-    """
-    パーセンタイルの範囲を求める
-    Parameters
-    ----------
-    arr : numpy.ndarray
-        対象データ
-    q : int or tuple
-        百分率 ( 0 <= q <= 100 )
 
-    Returns
-    -------
-    (lower, upper)
-        パーセンタイルの範囲
-    """
-    
-    if isinstance(q, tuple):
-        lower_bound = np.percentile(arr, q=q[0])
-        upper_bound = np.percentile(arr, q=(100 - q[1]))
-    
-    else:
-        lower_bound = np.percentile(arr, q=q)
-        upper_bound = np.percentile(arr, q=(100 - q))
-        
-    return (lower_bound, upper_bound)
     
     
 def find_threshold(src_img, ground_truth, logger=None):
