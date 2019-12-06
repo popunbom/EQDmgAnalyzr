@@ -88,6 +88,47 @@ class ImageLogger:
                 raise FileExistsError( "File already exists ! -- '{file_path}'".format(
                     file_path=_file_path
                 ) )
+
+    def _makedir( self, update_timestamp=True, _sub_path="" ):
+        """
+        ログを保存するディレクトリを作成する
+            prefix, timestamp, suffix に基づいてディレクトリ名を決定し、
+            self.base_path 直下にディレクトリを作成する
+            すでにフォルダが存在する場合、FileExistsError 例外が発生
+            する
+
+        Parameters
+        ----------
+        update_timestamp : bool, default True
+            タイムスタンプの更新を行うかどうか
+        _sub_path : str, default ""
+            サブディレクトリのパス
+            空文字列出ない場合、サブディレクトリの作成を行う
+
+        """
+    
+        # Regenerate Timestamp
+        if update_timestamp:
+            self._update_timestamp()
+    
+        base_path = self.dir_path
+    
+        if not os.path.exists( base_path ):
+            os.makedirs( base_path )
+        
+            self._logging_msg( "created directory -- '{dir_path}'".format(
+                dir_path=base_path
+            ) )
+
+        sub_path = os.path.join( base_path, _sub_path )
+        if sub_path and not os.path.exists( sub_path ):
+            os.makedirs( sub_path )
+        
+            self._logging_msg( "created sub-directory -- '{dir_path}'".format(
+                dir_path=sub_path
+            ) )
+    
+        return
     
     def _generate_save_path( self, _file_name, _ext, _sub_path="", _overwrite=False ):
         """
@@ -115,9 +156,14 @@ class ImageLogger:
         TYPE_ASSERT( _file_name, str )
         TYPE_ASSERT( _ext, str )
         TYPE_ASSERT( _sub_path, str, allow_empty=True ),
-        TYPE_ASSERT( _overwrite )
+        TYPE_ASSERT( _overwrite, bool )
         
         assert _ext.startswith("."), "argument '_ext' must be started by '.'"
+        
+        
+        # Create Sub-Directory
+        if _sub_path:
+            self._makedir(update_timestamp=False, _sub_path=_sub_path)
         
         # Generate saving path
         save_path = os.path.join( self.dir_path, _file_name )
@@ -166,7 +212,7 @@ class ImageLogger:
             os.makedirs( self.base_path )
             print( "Created base directory for logging -- ", self.base_path )
         
-        self.makedir()
+        self._makedir()
     
     @property
     def dir_name( self ):
@@ -198,29 +244,7 @@ class ImageLogger:
         """
         return os.path.join( self.base_path, self.dir_name )
     
-    def makedir( self ):
-        """
-        ログを保存するディレクトリを作成する
-            prefix, timestamp, suffix に基づいてディレクトリ名を決定し、
-            self.base_path 直下にディレクトリを作成する
-            すでにフォルダが存在する場合、FileExistsError 例外が発生
-            する
-
-        Returns
-        -------
-        bool
-            os.makedir の戻り値
-
-        """
-        
-        # Regenerate Timestamp
-        self._update_timestamp()
-        
-        self._logging_msg( "created directory -- '{dir_path}'".format(
-            dir_path=self.dir_path
-        ) )
-        
-        return os.mkdir( self.dir_path )
+    
     
     def get_psuedo_colors( self, size=1, range_h=(0, 180), range_s=255, range_v=(100, 255) ):
         TYPE_ASSERT( size, [int, np.sctypes['uint'], np.sctypes['int']] )
