@@ -89,9 +89,10 @@ if __name__ == '__main__':
     ).astype(bool)
     
     result = cv2.imread(
-        path.join(
-            DIR_RESULT, "result_morphology.tiff"
-        ),
+        # path.join(
+        #     DIR_RESULT, "result_morphology.tiff"
+        # ),
+        "./tmp/notebooks/EdgeAngleVariance+HPF/20190924_224939/Thresh - Sub(AngleVar, HPF).tiff",
         cv2.IMREAD_UNCHANGED
     ).astype(bool)
     
