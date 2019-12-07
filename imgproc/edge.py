@@ -19,7 +19,7 @@ from utils.common import eprint
 from utils.exception import InvalidImageOrFile, UnsupportedOption
 
 
-class EdgeProcedures( object ):
+class EdgeProcedures(object):
     """
     エッジ抽出に関わる処理を行う
     
@@ -36,7 +36,7 @@ class EdgeProcedures( object ):
     """
     
     @staticmethod
-    def calc_end_points( points, deg_angles, distance ):
+    def calc_end_points(points, deg_angles, distance):
         """
         中心座標を(x, y)、角度を deg_angle、2点間の距離を
         distance としたときの、両端点の座標を計算する
@@ -57,22 +57,22 @@ class EdgeProcedures( object ):
         """
         
         # convert Degree to Radian
-        rad_angles = np.radians( deg_angles )
+        rad_angles = np.radians(deg_angles)
         
         # P: Base point, A: Angle, D: Difference
-        P = np.array( points, dtype=np.float32 )
-        A = np.stack( [np.sin( rad_angles ), np.cos( rad_angles )], axis=1 )
+        P = np.array(points, dtype=np.float32)
+        A = np.stack([np.sin(rad_angles), np.cos(rad_angles)], axis=1)
         D = distance / 2
         
         pts_1, pts_2 = P + (A * D), P - (A * D)
         
-        pts_1 = pts_1.astype( np.int16 )
-        pts_2 = pts_2.astype( np.int16 )
+        pts_1 = pts_1.astype(np.int16)
+        pts_2 = pts_2.astype(np.int16)
         
         return pts_1, pts_2
     
     @staticmethod
-    def angle_variance_using_mode( _edge_magnitude, _edge_angle ):
+    def angle_variance_using_mode(_edge_magnitude, _edge_angle):
         """
         最頻角度に基づくエッジ角度分散の計算
             通常の分散の計算では平均値を用いるが、角度の
@@ -100,15 +100,15 @@ class EdgeProcedures( object ):
         hist, _ = np.histogram(
             angle,
             weights=magnitude,
-            bins=list( range( 361 ) )
+            bins=list(range(361))
         )
         
-        variance = np.max( hist ) / np.sum( magnitude )
+        variance = np.max(hist) / np.sum(magnitude)
         
         return variance
     
     @staticmethod
-    def angle_variance_using_mean_vector( _edge_magnitude, _edge_angle ):
+    def angle_variance_using_mean_vector(_edge_magnitude, _edge_angle):
         """
         平均ベクトルに基づくエッジ角度分散の計算
             *REF: [\[PDF\] 角度統計](http://q-bio.jp/images/5/53/角度統計配布_qbio4th.pdf)*
@@ -140,26 +140,24 @@ class EdgeProcedures( object ):
             エッジ角度の分散値 [0, 1]
 
         """
-        degrees = _edge_angle
+        radians = _edge_angle
         weights = _edge_magnitude
-
-        if np.isclose( np.sum( weights ), 0 ):
+        
+        if np.isclose(np.sum(weights), 0):
             return 0
-
+        
         # weights /= weights.max()
         
         M_cos = np.average(
-            # np.cos( np.radians( degrees ) ),
-            np.cos( degrees ),
+            np.cos(radians),
             weights=weights
         )
         M_sin = np.average(
-            # np.sin( np.radians( degrees ) ),
-            np.sin( degrees ),
+            np.sin(radians),
             weights=weights
         )
-
-        R = np.hypot( M_cos, M_sin )
+        
+        R = np.hypot(M_cos, M_sin)
         
         variance = 1 - R
         
@@ -168,10 +166,10 @@ class EdgeProcedures( object ):
         # return variance * np.std(weights)
     
     @staticmethod
-    def magnitude_stddev( _edge_magnitude, _edge_angle ):
-        return np.std( _edge_magnitude )
+    def magnitude_stddev(_edge_magnitude, _edge_angle):
+        return np.std(_edge_magnitude)
     
-    def set_detector_params( self, **kwargs ):
+    def set_detector_params(self, **kwargs):
         """
         エッジ検出の際のパラメーター設定
         Parameters
@@ -186,15 +184,15 @@ class EdgeProcedures( object ):
             設定反映後のパラメーター一覧
 
         """
-        self.detector_params.update( kwargs )
+        self.detector_params.update(kwargs)
         
         return self.detector_params
     
     @staticmethod
-    def _prewitt( img, axis=0, ksize=3 ):
-        TYPE_ASSERT( img, np.ndarray )
-        TYPE_ASSERT( axis, int )
-        TYPE_ASSERT( ksize, int )
+    def _prewitt(img, axis=0, ksize=3):
+        TYPE_ASSERT(img, np.ndarray)
+        TYPE_ASSERT(axis, int)
+        TYPE_ASSERT(ksize, int)
         
         assert axis <= img.ndim, \
             "'axis' must be smaller than 'img.ndim'"
@@ -202,34 +200,34 @@ class EdgeProcedures( object ):
         kernel = np.zeros((ksize, ksize), dtype=np.float32)
         
         if axis == 0:
-            kernel[0, :], kernel[(ksize-1), :] = 1, -1
+            kernel[0, :], kernel[(ksize - 1), :] = 1, -1
         elif axis == 1:
             kernel[:, 0], kernel[:, (ksize - 1)] = 1, -1
         
         return convolve(img, kernel)
     
     @staticmethod
-    def _sobel( img, axis=0, ksize=3 ):
-        TYPE_ASSERT( img, np.ndarray )
-        TYPE_ASSERT( axis, int )
-        TYPE_ASSERT( ksize, int )
-    
+    def _sobel(img, axis=0, ksize=3):
+        TYPE_ASSERT(img, np.ndarray)
+        TYPE_ASSERT(axis, int)
+        TYPE_ASSERT(ksize, int)
+        
         assert axis <= img.ndim, \
             "'axis' must be smaller than 'img.ndim'"
         
         kernel = np.zeros((ksize, ksize), dtype=np.float32)
         
         if axis == 0:
-            kernel[0, :], kernel[(ksize-1), :] = 1, -1
-            kernel[0, (ksize // 2)], kernel[(ksize-1), (ksize // 2)] = 2, -2
+            kernel[0, :], kernel[(ksize - 1), :] = 1, -1
+            kernel[0, (ksize // 2)], kernel[(ksize - 1), (ksize // 2)] = 2, -2
         elif axis == 1:
             kernel[:, 0], kernel[:, (ksize - 1)] = 1, -1
-            kernel[(ksize // 2), 0], kernel[(ksize // 2), (ksize-1)] = 2, -2
-
-        return convolve(img, kernel)
+            kernel[(ksize // 2), 0], kernel[(ksize // 2), (ksize - 1)] = 2, -2
         
+        return convolve(img, kernel)
     
-    def get_magnitude( self ):
+    
+    def get_magnitude(self):
         """
         Sobel フィルタによるエッジ強度の抽出
         
@@ -238,22 +236,22 @@ class EdgeProcedures( object ):
         numpy.ndarray
             エッジ強度 (dtype=np.float32, [0, 1.0])
         """
-
+        
         if self.detector_params["algorithm"] == "sobel":
-            dy = self._sobel( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
-            dx = self._sobel( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
+            dy = self._sobel(self.src_img, axis=0, ksize=self.detector_params["ksize"])
+            dx = self._sobel(self.src_img, axis=1, ksize=self.detector_params["ksize"])
         
         elif self.detector_params["algorithm"] == "prewitt":
-            dy = self._prewitt( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
-            dx = self._prewitt( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
-            
+            dy = self._prewitt(self.src_img, axis=0, ksize=self.detector_params["ksize"])
+            dx = self._prewitt(self.src_img, axis=1, ksize=self.detector_params["ksize"])
+        
         magnitude = np.hypot(dx, dy)
         
         magnitude /= magnitude.max()
         
         return magnitude
     
-    def get_angle( self ):
+    def get_angle(self):
         """
         Sobel フィルタによるエッジ強度の抽出
         
@@ -262,22 +260,43 @@ class EdgeProcedures( object ):
         numpy.ndarray
             エッジ強度(dtype=np.float32, [0°, 360°])
         """
-
+        
         if self.detector_params["algorithm"] == "sobel":
-            dy = self._sobel( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
-            dx = self._sobel( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
+            dy = self._sobel(self.src_img, axis=0, ksize=self.detector_params["ksize"])
+            dx = self._sobel(self.src_img, axis=1, ksize=self.detector_params["ksize"])
         
         elif self.detector_params["algorithm"] == "prewitt":
-            dy = self._prewitt( self.src_img, axis=0, ksize=self.detector_params["ksize"] )
-            dx = self._prewitt( self.src_img, axis=1, ksize=self.detector_params["ksize"] )
-
-        # Edge Angle (0° <= θ <= 360°)
-        # angle = np.round( np.degrees( np.arctan2( dy, dx ) ) ) + 180
-        angle = np.arctan2( dy, dx )
+            dy = self._prewitt(self.src_img, axis=0, ksize=self.detector_params["ksize"])
+            dx = self._prewitt(self.src_img, axis=1, ksize=self.detector_params["ksize"])
+        
+        # Edge Angle (-180° <= θ <= +180°)
+        degrees = np.round(
+            np.degrees(
+                np.arctan2(dy, dx)
+            )
+        )
+        
+        # Mod 180 degrees
+        degrees = (degrees + 180) % 180
+        
+        # Quantize by 5 degrees
+        Q = 5
+        
+        bins = np.arange(-180, 180 + 1, Q)
+        degrees = np.take(
+            bins,
+            np.digitize(
+                degrees,
+                bins
+            ) - 1
+        )
+        
+        # Convert to radians
+        angle = np.radians(degrees)
         
         return angle
     
-    def get_feature_by_window( self, func, window_size, step ):
+    def get_feature_by_window(self, func, window_size, step):
         """
         ウィンドウで切りながら、エッジ特徴量を計算
         
@@ -305,8 +324,8 @@ class EdgeProcedures( object ):
             step=step,
             dst_dtype=np.float64
         )
-
-    def get_angle_colorized_img( self, normalized_magnitude=False, max_intensity=False, mask_img=None ):
+    
+    def get_angle_colorized_img(self, normalized_magnitude=False, max_intensity=False, mask_img=None):
         """
         エッジ角度の疑似カラー画像を生成
             Hue (色相) に角度値を割り当て、HSV→RGB への
@@ -337,26 +356,27 @@ class EdgeProcedures( object ):
             None でない場合、マスク済み疑似カラー画像が返却される
         """
         
-        TYPE_ASSERT( mask_img, [None, np.ndarray] )
-        if isinstance( mask_img, np.ndarray ):
-            NDIM_ASSERT( mask_img, 2 )
+        TYPE_ASSERT(mask_img, [None, np.ndarray])
+        if isinstance(mask_img, np.ndarray):
+            NDIM_ASSERT(mask_img, 2)
         
         magnitude, angle = self.edge_magnitude, self.edge_angle
-
+        
         # Edge Angle (0° <= θ <= 360°)
-        hue = ((np.round( np.degrees( angle ) ) + 180) / 2).astype( np.uint8 )
-
-        saturation = np.ones( hue.shape, dtype=hue.dtype ) * 255
-
+        # hue = ((np.round(np.degrees(angle)) + 180) / 2).astype(np.uint8)
+        hue = np.degrees(angle).astype(np.uint8)
+        
+        saturation = np.ones(hue.shape, dtype=hue.dtype) * 255
+        
         if max_intensity:
-            value = np.ones( hue.shape, dtype=hue.dtype ) * 255
+            value = np.ones(hue.shape, dtype=hue.dtype) * 255
         else:
             if normalized_magnitude:
-                value = (magnitude * (255.0 / magnitude.max())).astype( np.uint8 )
+                value = (magnitude * (255.0 / magnitude.max())).astype(np.uint8)
             else:
-                value = (magnitude * 255.0).astype( np.uint8 )
+                value = (magnitude * 255.0).astype(np.uint8)
         
-        angle_img = cv2.cvtColor( np.stack( [hue, saturation, value], axis=2 ), cv2.COLOR_HSV2BGR )
+        angle_img = cv2.cvtColor(np.stack([hue, saturation, value], axis=2), cv2.COLOR_HSV2BGR)
         
         if mask_img is None:
             return angle_img
@@ -364,12 +384,12 @@ class EdgeProcedures( object ):
             if mask_img.max() != 1:
                 mask_img[mask_img > 0] = 1
             
-            masked_img = angle_img * np.stack( [mask_img] * 3, axis=2 )
+            masked_img = angle_img * np.stack([mask_img] * 3, axis=2)
             
             return masked_img
     
-    def draw_edge_angle_line( self, line_color=(255, 255, 255), line_length=10,
-                              draw_on_angle_img=True, mask_img=None ):
+    def draw_edge_angle_line(self, line_color=(255, 255, 255), line_length=10,
+                             draw_on_angle_img=True, mask_img=None):
         """
         エッジ角度に対応する線分を描画する
 
@@ -396,15 +416,15 @@ class EdgeProcedures( object ):
             それぞれ3倍されて返却される
         """
         
-        TYPE_ASSERT( mask_img, [None, np.ndarray] )
-        NDIM_ASSERT( mask_img, 2 )
+        TYPE_ASSERT(mask_img, [None, np.ndarray])
+        NDIM_ASSERT(mask_img, 2)
         
         if draw_on_angle_img:
-            base_img = self.get_angle_colorized_img( max_intensity=True, mask_img=mask_img )
+            base_img = self.get_angle_colorized_img(max_intensity=True, mask_img=mask_img)
         else:
             base_img = self.src_img
         
-        SAME_SHAPE_ASSERT( mask_img, base_img, ignore_ndim=True )
+        SAME_SHAPE_ASSERT(mask_img, base_img, ignore_ndim=True)
         
         angles = self.get_angle()
         
@@ -414,25 +434,25 @@ class EdgeProcedures( object ):
         
         # Vectorization Process
         if mask_img is not None:
-            draw_points = (np.argwhere( mask_img != 0 ) + 1) * 3 - 2
+            draw_points = (np.argwhere(mask_img != 0) + 1) * 3 - 2
             angles = angles[mask_img != 0].flatten()
         else:
-            draw_points = np.stack( np.meshgrid( *[np.arange( i ) for i in mask_img.shape[:2]] ), axis=2 )
+            draw_points = np.stack(np.meshgrid(*[np.arange(i) for i in mask_img.shape[:2]]), axis=2)
             angles = angles.flatten()
         
-        pts_1, pts_2 = self.calc_end_points( draw_points, angles, line_length )
+        pts_1, pts_2 = self.calc_end_points(draw_points, angles, line_length)
         
         # Line Drawing
-        for (i, (pt_1, pt_2)) in enumerate( zip( pts_1, pts_2 ) ):
-            pt_1, pt_2 = tuple( pt_1[::-1] ), tuple( pt_2[::-1] )
-            print( f"\rComputing ... [ {i} / {pts_1.shape[0]} ]", end="", flush=True )
-            cv2.line( angle_line_img, pt_1, pt_2, line_color, thickness=1 )
+        for (i, (pt_1, pt_2)) in enumerate(zip(pts_1, pts_2)):
+            pt_1, pt_2 = tuple(pt_1[::-1]), tuple(pt_2[::-1])
+            print(f"\rComputing ... [ {i} / {pts_1.shape[0]} ]", end="", flush=True)
+            cv2.line(angle_line_img, pt_1, pt_2, line_color, thickness=1)
         
         return angle_line_img
     
     
     # Constructor
-    def __init__( self, img, ksize=3, algorithm="sobel" ) -> None:
+    def __init__(self, img, ksize=3, algorithm="sobel") -> None:
         """
         コンストラクタ
 
@@ -455,34 +475,34 @@ class EdgeProcedures( object ):
         
         # TODO: cv2.cvtColor(BGR2GRAY) と imread(IMREAD_GRAYSCALE) の結果が異なる！？
         
-        TYPE_ASSERT( img, (str, np.ndarray) )
-        TYPE_ASSERT( ksize, int)
-        TYPE_ASSERT( algorithm, str )
-
+        TYPE_ASSERT(img, (str, np.ndarray))
+        TYPE_ASSERT(ksize, int)
+        TYPE_ASSERT(algorithm, str)
+        
         assert algorithm in ("sobel", "prewitt"), \
             "Algorithm '{algorithm} is not support.".format(algorithm=algorithm)
         assert ksize % 2 == 1, \
             "'ksize' must be odd number. (ksize={ksize})".format(ksize=ksize)
-
-        if isinstance( img, str ):
-            if not path.exists( img ):
-                raise InvalidImageOrFile( "Cannot find file -- '{path}'".format( path=img ) )
-            else:
-                self.src_img = cv2.imread( img, cv2.IMREAD_GRAYSCALE )
         
-        elif isinstance( img, np.ndarray ):
+        if isinstance(img, str):
+            if not path.exists(img):
+                raise InvalidImageOrFile("Cannot find file -- '{path}'".format(path=img))
+            else:
+                self.src_img = cv2.imread(img, cv2.IMREAD_GRAYSCALE)
+        
+        elif isinstance(img, np.ndarray):
             if img.ndim == 3:
-                self.src_img = cv2.cvtColor( img, cv2.COLOR_BGR2GRAY )
+                self.src_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             else:
                 self.src_img = img.copy()
-                
+        
         if self.src_img.dtype == np.uint8:
             self.src_img = self.src_img / 255
         
         self.src_img = self.src_img.astype(np.float32)
-                
+        
         self.detector_params = {
-            "ksize": ksize,
+            "ksize"    : ksize,
             "algorithm": algorithm
         }
         eprint("Edge params:", self.detector_params)
@@ -491,24 +511,24 @@ class EdgeProcedures( object ):
         self._edge_angle = None
     
     @property
-    def edge_magnitude( self ):
+    def edge_magnitude(self):
         if self._edge_magnitude is None:
             self.edge_magnitude = self.get_magnitude()
         
         return self._edge_magnitude
     
     @edge_magnitude.setter
-    def edge_magnitude( self, value ):
+    def edge_magnitude(self, value):
         self._edge_magnitude = value
     
     
     @property
-    def edge_angle( self ):
+    def edge_angle(self):
         if self._edge_angle is None:
             self.edge_angle = self.get_angle()
         
         return self._edge_angle
     
     @edge_angle.setter
-    def edge_angle( self, value ):
+    def edge_angle(self, value):
         self._edge_angle = value

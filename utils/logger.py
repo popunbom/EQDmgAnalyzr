@@ -333,14 +333,6 @@ class ImageLogger:
         # Init: Deep-copy image
         img = _img.copy()
         
-        # Generate file path
-        save_path = self._generate_save_path(
-            _file_name=file_name,
-            _ext=".png" if img.dtype == np.uint8 else ".tiff",
-            _sub_path=sub_path,
-            _overwrite=overwrite
-        )
-        
         ########################
         # Generate output file #
         ########################
@@ -373,6 +365,14 @@ class ImageLogger:
         elif img.dtype != np.uint8:
             img += np.fabs( img.min() )
             img = (img / img.max() * 255).astype( np.uint8 )
+            
+        # Generate file path
+        save_path = self._generate_save_path(
+            _file_name=file_name,
+            _ext=".png" if img.dtype == np.uint8 else ".tiff",
+            _sub_path=sub_path,
+            _overwrite=overwrite
+        )
         
         # Write file
         if cv2.imwrite( save_path, img ):
