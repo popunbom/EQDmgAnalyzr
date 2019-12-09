@@ -400,7 +400,7 @@ class RegionSegmentation:
         img = self.src_img
         
         edge = EdgeProcedures( self.src_img )
-        edge_angle = edge.get_angle()
+        edge_angle = edge._calc_angle()
         
         if label_1 not in relation:
             raise KeyError( " Label '{label_1}' is not contain in 'self.relation'".format(
@@ -455,7 +455,7 @@ class RegionSegmentation:
         img = self.src_img
         
         edge = EdgeProcedures( self.src_img )
-        edge_angle = edge.get_angle()
+        edge_angle = edge._calc_angle()
         
         scores = dict()
         

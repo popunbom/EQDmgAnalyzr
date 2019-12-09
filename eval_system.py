@@ -67,7 +67,7 @@ angle_var = zoom_to_img_size( angle_var, img.shape )
 mag_stddev = zoom_to_img_size( mag_stddev, img.shape )
 
 angle_col = edge.get_angle_colorized_img( max_intensity=True )
-edge_mag = edge.get_magnitude()
+edge_mag = edge._calc_magnitude()
 
 logger.logging_img( edge_mag, "edge_magnitude" )
 logger.logging_img( angle_var, "angle_variance" )

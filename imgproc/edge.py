@@ -227,7 +227,7 @@ class EdgeProcedures(object):
         return convolve(img, kernel)
     
     
-    def get_magnitude(self):
+    def _calc_magnitude(self):
         """
         Sobel フィルタによるエッジ強度の抽出
         
@@ -251,7 +251,7 @@ class EdgeProcedures(object):
         
         return magnitude
     
-    def get_angle(self):
+    def _calc_angle(self):
         """
         Sobel フィルタによるエッジ強度の抽出
         
@@ -277,19 +277,22 @@ class EdgeProcedures(object):
         )
         
         # Mod 180 degrees
-        degrees = (degrees + 180) % 180
+        # degrees = (degrees + 180) % 180
+        
+        # eprint("Angle: Do not quantize")
         
         # Quantize by 5 degrees
-        Q = 5
-        
-        bins = np.arange(-180, 180 + 1, Q)
-        degrees = np.take(
-            bins,
-            np.digitize(
-                degrees,
-                bins
-            ) - 1
-        )
+        # Q = 45
+        # eprint(f"Angle: Do quantize (Q = {Q})")
+        #
+        # bins = np.arange(-180, 180 + 1, Q)
+        # degrees = np.take(
+        #     bins,
+        #     np.digitize(
+        #         degrees,
+        #         bins
+        #     ) - 1
+        # )
         
         # Convert to radians
         angle = np.radians(degrees)
@@ -322,7 +325,8 @@ class EdgeProcedures(object):
             func,
             window_size=window_size,
             step=step,
-            dst_dtype=np.float64
+            dst_dtype=np.float64,
+            n_worker=6
         )
     
     def get_angle_colorized_img(self, normalized_magnitude=False, max_intensity=False, mask_img=None):
@@ -426,7 +430,7 @@ class EdgeProcedures(object):
         
         SAME_SHAPE_ASSERT(mask_img, base_img, ignore_ndim=True)
         
-        angles = self.get_angle()
+        angles = self._calc_angle()
         
         angle_line_img = cv2.resize(
             base_img, dsize=None, fx=3.0, fy=3.0, interpolation=cv2.INTER_NEAREST
@@ -513,7 +517,7 @@ class EdgeProcedures(object):
     @property
     def edge_magnitude(self):
         if self._edge_magnitude is None:
-            self.edge_magnitude = self.get_magnitude()
+            self.edge_magnitude = self._calc_magnitude()
         
         return self._edge_magnitude
     
@@ -525,7 +529,7 @@ class EdgeProcedures(object):
     @property
     def edge_angle(self):
         if self._edge_angle is None:
-            self.edge_angle = self.get_angle()
+            self.edge_angle = self._calc_angle()
         
         return self._edge_angle
     
