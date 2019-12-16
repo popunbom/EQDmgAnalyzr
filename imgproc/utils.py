@@ -27,7 +27,7 @@ imgproc/utils.py : 汎用的な画像処理
 """
 
 
-def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, n_worker=4):
+def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, n_worker=12):
     """
     画像を一部を切り取り、func 関数で行った計算結果を
     返却する
@@ -66,6 +66,10 @@ def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, 
     
     # TYPE ASSERTION
     TYPE_ASSERT(imgs, [np.ndarray, tuple])
+    TYPE_ASSERT(window_size, [int, tuple])
+    TYPE_ASSERT(step, [int, tuple])
+    TYPE_ASSERT(dst_dtype, type)
+    TYPE_ASSERT(n_worker, int)
     
     if isinstance(imgs, np.ndarray):
         imgs = tuple([imgs])
@@ -77,77 +81,116 @@ def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, 
     
     n_imgs = len(imgs)
     height, width = imgs[0].shape[:2]
-    
+
     assert callable(func) and n_args(func) >= n_imgs, \
         "argument 'func' must be callable object which has {0} argument at least. \n".format(n_imgs) + \
         "  ( num of argumets of 'func' depends on argument 'imgs')"
     
-    TYPE_ASSERT(step, [int, tuple])
     if isinstance(step, int):
-        s_i, s_j = [step] * 2
-    else:
-        s_i, s_j = step
-    
-    TYPE_ASSERT(window_size, [int, tuple])
+        step = tuple([step] * 2)
     if isinstance(window_size, int):
-        w_i, w_j = [window_size] * 2
-    else:
-        w_i, w_j = window_size
+        window_size = tuple([window_size] * 2)
     
+    s_i, s_j = step
+    w_w, w_h = window_size
     results_shape = ceil(height / s_i), ceil(width / s_j)
+    
+    # Add padding to input images
+    eprint("Add padding ... ")
+    imgs = [
+        np.pad(
+            img,
+            pad_width=[
+                tuple([w_w // 2]),
+                tuple([w_h // 2]),
+            ] + [] if img.ndim == 2 else [tuple([0])],
+            mode="constant",
+            constant_values=0
+        )
+        for img in imgs
+    ]
+
     
     if n_worker == 1:
         results = np.ndarray(results_shape, dtype=dst_dtype)
         
-        for ii, i in tqdm(enumerate(range(0, height, s_i)), total=results_shape[0]):
+        for ii, i in tqdm(enumerate(range(w_h // 2, height + w_h // 2, s_i)), total=results_shape[0]):
             
-            for jj, j in tqdm(enumerate(range(0, width, s_j)), total=results_shape[1], leave=False):
+            for jj, j in tqdm(enumerate(range(w_w // 2, width + w_w // 2, s_j)), total=results_shape[1], leave=False):
                 
-                if isinstance(imgs, np.ndarray):
-                    roi = imgs[i:i + w_i, j:j + w_j]
-                    results[ii][jj] = func(roi)
+                rois = [
+                    img[
+                        get_window_rect(
+                            img.shape,
+                            center=(j, i),
+                            wnd_size=(w_w, w_h),
+                            ret_type="slice"
+                        )
+                    ]
+                    for img in imgs
+                ]
                 
-                else:
-                    rois = [img[i:i + w_i, j:j + w_j] for img in imgs]
-                    
-                    results[ii][jj] = func(*rois)
+                results[ii][jj] = func(*rois)
     
     else:
         global _func
         global _callee
-    
+        
         _func = func
-        def _callee(_imgs, _func, _width, _s_j, _w_j, _n_loop):
+        
+        def _callee(_imgs, _func, _width, _s_j, _w_w, _n_loop):
             
             _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
-            _desc = f"Worker #{_worker_id}"
+            _desc = f"Worker #{_worker_id:3d}"
             
             _results = list()
             
-            for jj, j in tqdm(enumerate(range(0, _width, _s_j)), total=_n_loop, desc=_desc, position=_worker_id,
+            for jj, j in tqdm(enumerate(range(_w_w // 2, _width + _w_w // 2, _s_j)), total=_n_loop, desc=_desc,
+                              position=_worker_id,
                               leave=False):
-                _rois = [_roi[:, j:j + _w_j] for _roi in _imgs]
+                _rois = [
+                    # _roi[:, j:j + _w_w]
+                    _roi[
+                        get_window_rect(
+                            _roi.shape,
+                            center=(j, -1),
+                            wnd_size=(_w_w, -1),
+                            ret_type="slice"
+                        )
+                    ]
+                    for _roi in _imgs
+                ]
                 _results.append(_func(*_rois))
             
             return _results
-            
+        
         
         progress_bar = tqdm(total=results_shape[0])
         
-        def _update_progressbar( arg ):
+        def _update_progressbar(arg):
             progress_bar.update()
         
         pool = Pool(processes=n_worker, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
         
         results = list()
-        for ii, i in enumerate(range(0, height, s_i)):
+        for ii, i in enumerate(range(w_h // 2, height + w_h // 2, s_i)):
             
-            rois = [img[i:i + w_i, :] for img in imgs]
+            rois = [
+                img[
+                    get_window_rect(
+                        img.shape,
+                        center=(-1, i),
+                        wnd_size=(-1, w_h),
+                        ret_type="slice"
+                    )
+                ]
+                for img in imgs
+            ]
             
             results.append(
                 pool.apply_async(
                     _callee,
-                    args=(rois, func, width, s_j, w_j, results_shape[1]),
+                    args=(rois, func, width, s_j, w_h, results_shape[1]),
                     callback=_update_progressbar
                 )
             )
@@ -209,8 +252,10 @@ def get_window_rect(img_shape, center, wnd_size, ret_type="tuple"):
         - ndarray.shape である必要がある
     center : tuple of ints
         中心座標: (x, y)
-    wnd_size : int
+    wnd_size : int or tuple of ints
         切り出す矩形の大きさ
+        負値の場合、全体を切り出す
+        tuple の場合は (幅, 高さ)
     ret_type : string
         返却値の種類を指定
         - `tuple` と `slice` が使用可能
@@ -226,28 +271,49 @@ def get_window_rect(img_shape, center, wnd_size, ret_type="tuple"):
     
     TYPE_ASSERT(img_shape, tuple)
     TYPE_ASSERT(center, tuple)
-    TYPE_ASSERT(wnd_size, int)
+    TYPE_ASSERT(wnd_size, [int, tuple])
     TYPE_ASSERT(ret_type, str)
+    
     assert ret_type in ("tuple", "slice"), \
         "`ret_type` must be 'tuple' or 'slice'"
     
-    height, width = img_shape[:2]
-    cx, cy = center
+    if isinstance(wnd_size, int):
+        wnd_size = tuple([wnd_size] * 2)
     
-    tl_x = max(0, int(cx - wnd_size / 2))
-    tl_y = max(0, int(cy - wnd_size / 2))
-    br_x = min(width, int(cx + wnd_size / 2))
-    br_y = min(height, int(cy + wnd_size / 2))
+    height, width = img_shape[:2]
+    c_x, c_y = center
+    w_w, w_h = wnd_size
     
     if ret_type == "tuple":
+        tl_y = 0 if w_h < 0 else max(0, int(c_y - w_h // 2))
+        tl_x = 0 if w_w < 0 else max(0, int(c_x - w_w // 2))
+        br_y = img_shape[0] if w_h < 0 else min(height, int(c_y + w_h // 2))
+        br_x = img_shape[1] if w_w < 0 else min(width, int(c_x + w_w // 2))
+        
         return tuple([tl_x, tl_y, br_x, br_y])
     
     elif ret_type == "slice":
         return np.s_[
-               cx - (wnd_size // 2):cx + (wnd_size // 2 + 1),
-               cy - (wnd_size // 2):cy + (wnd_size // 2 + 1)
-               ]
-    
+            slice(None) if w_h < 0 else slice(c_y - (w_h // 2), c_y + (w_h // 2 + 1)),
+            slice(None) if w_w < 0 else slice(c_x - (w_w // 2), c_x + (w_w // 2 + 1))
+        ]
+        # if w_h < 0 and w_w < 0:
+        #     return np.s_[:, :]
+        # elif w_h < 0:
+        #     return np.s_[
+        #         :,
+        #         c_x - (w_w // 2):c_x + (w_w // 2 + 1)
+        #     ]
+        # elif w_w < 0:
+        #     return np.s_[
+        #         c_y - (w_h // 2):c_y + (w_h // 2 + 1),
+        #         :
+        #     ]
+        # else:
+        #     return np.s_[
+        #         c_y - (w_h // 2):c_y + (w_h // 2 + 1),
+        #         c_x - (w_w // 2):c_x + (w_w // 2 + 1)
+        #     ]
     else:
         return None
 

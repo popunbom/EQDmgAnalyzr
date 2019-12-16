@@ -243,7 +243,7 @@ class EdgeLineFeatures:
         )
         
         _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
-        _desc = f"Worker #{_worker_id}"
+        _desc = f"Worker #{_worker_id:3d}"
         
         for _jj, _j in tqdm(
             enumerate(
@@ -251,7 +251,7 @@ class EdgeLineFeatures:
             ),
             position=_worker_id,
             desc=_desc,
-            total = _classified.size,
+            total=_classified.size,
             leave=False
         ):
             
@@ -264,7 +264,7 @@ class EdgeLineFeatures:
             _img_roi = _img[
                 get_window_rect(
                     img_shape=_img.shape,
-                    center=(_i, _j),
+                    center=(_j, _i),
                     wnd_size=_k_size,
                     ret_type="slice"
                 )
@@ -321,7 +321,7 @@ class EdgeLineFeatures:
         def _update_progressbar(arg):
             progress_bar.update()
         
-        pool = Pool(processes=9, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
+        pool = Pool(processes=12, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
         
         results = list()
         

@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from scipy.ndimage import sobel, prewitt, convolve
+from scipy.signal.windows import gaussian
 
 from imgproc.utils import compute_by_window
 from utils.assertion import TYPE_ASSERT, NDIM_ASSERT, SAME_SHAPE_ASSERT
@@ -143,6 +144,13 @@ class EdgeProcedures(object):
         radians = _edge_angle
         weights = _edge_magnitude
         
+        gaussian_kernel = np.outer(
+            gaussian(_edge_magnitude.shape[0], std=_edge_magnitude.shape[0] / 3),
+            gaussian(_edge_magnitude.shape[1], std=_edge_magnitude.shape[1] / 3)
+        )
+        
+        weights = weights * gaussian_kernel
+        
         if np.isclose(np.sum(weights), 0):
             return 0
         
@@ -161,8 +169,8 @@ class EdgeProcedures(object):
         
         variance = 1 - R
         
-        return variance
-        # return variance * np.mean(weights)
+        # return variance
+        return variance * np.mean(weights)
         # return variance * np.std(weights)
     
     @staticmethod
@@ -326,7 +334,7 @@ class EdgeProcedures(object):
             window_size=window_size,
             step=step,
             dst_dtype=np.float64,
-            n_worker=6
+            n_worker=12
         )
     
     def get_angle_colorized_img(self, normalized_magnitude=False, max_intensity=False, mask_img=None):

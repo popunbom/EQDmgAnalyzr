@@ -8,6 +8,7 @@
 from os import path
 from itertools import product
 
+from scipy.signal.windows import gaussian
 from skimage.morphology import disk
 from tqdm import tqdm
 
@@ -17,6 +18,7 @@ from scipy import ndimage as ndi
 import matplotlib.pyplot as plt
 
 from imgproc.edge import EdgeProcedures
+from imgproc.edge_line_feature import EdgeLineFeatures
 from imgproc.utils import compute_by_window
 from utils.assertion import NDARRAY_ASSERT, SAME_SHAPE_ASSERT, TYPE_ASSERT
 from utils.logger import ImageLogger
@@ -337,6 +339,167 @@ class ParamsFinder:
 
 class BuildingDamageExtractor:
     
+    @staticmethod
+    def _mean(roi):
+        return np.mean(roi)
+    
+    @staticmethod
+    def calc_percentage(roi):
+        LABELS = EdgeLineFeatures.LABELS
+        BG = LABELS["BG"]
+        ENDPOINT = LABELS["endpoint"]
+        BRANCH = LABELS["branch"]
+        
+        n_edges = roi.size - roi[roi == BG].size
+        # n_edges = roi.size
+        
+        if n_edges == 0:
+            return 0
+        
+        n_endpoint = roi[roi == ENDPOINT].size
+        n_branch = roi[roi == BRANCH].size
+        
+        return (n_endpoint + n_branch) / n_edges
+    
+    @staticmethod
+    def calc_weighted_percentage(roi):
+        LABELS = EdgeLineFeatures.LABELS
+        BG = LABELS["BG"]
+        ENDPOINT = LABELS["endpoint"]
+        BRANCH = LABELS["branch"]
+        
+        # sigma = params["calc_weighted_percentage"]["sigma"]
+        sigma = roi.shape[0] / 3
+        
+        gaussian_kernel = np.outer(
+            gaussian(roi.shape[0], std=sigma),
+            gaussian(roi.shape[1], std=sigma)
+        )
+        
+        # w_edges = np.sum(gaussian_kernel) - np.sum(gaussian_kernel[roi == BG])
+        w_edges = np.sum(gaussian_kernel)
+        
+        if w_edges == 0:
+            return 0
+        
+        w_endpoint = np.sum(gaussian_kernel[roi == ENDPOINT])
+        w_branch = np.sum(gaussian_kernel[roi == BRANCH])
+        
+        return (w_endpoint + w_branch) / w_edges
+    
+    @staticmethod
+    def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
+        NDARRAY_ASSERT(img, ndim=2)
+        TYPE_ASSERT(window_size, int)
+        TYPE_ASSERT(step, int)
+        TYPE_ASSERT(logger, [None, ImageLogger])
+        
+        # Find Canny Thresholds
+        # params_finder = ParamsFinder(logger=self.logger)
+        # _, canny_edge = params_finder.find_canny_thresholds(img, ground_truth)
+        
+        edge_proc = EdgeProcedures(img)
+        # edge_proc.edge_magnitude = canny_edge
+        
+        params = {
+            "window_proc": {
+                "window_size": window_size,
+                "step"       : step
+            }
+        }
+        
+        # Edge Angle Variance
+        fd_img = edge_proc.get_feature_by_window(
+            edge_proc.angle_variance_using_mean_vector,
+            **params["window_proc"]
+        )
+        
+        fd_img = ndi.zoom(
+            fd_img / fd_img.max(),
+            (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
+            order=0,
+            mode='nearest'
+        )
+        
+        if isinstance(logger, ImageLogger):
+            logger.logging_dict(params, "params", sub_path="edge_angle_variance")
+            logger.logging_img(edge_proc.edge_magnitude, "magnitude", sub_path="edge_angle_variance")
+            logger.logging_img(edge_proc.edge_angle, "angle", cmap="hsv", sub_path="edge_angle_variance")
+            logger.logging_img(edge_proc.get_angle_colorized_img(), "angle_colorized", sub_path="edge_angle_variance")
+            logger.logging_img(fd_img, "angle_variance", sub_path="edge_angle_variance")
+            logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
+    
+        return fd_img
+    
+    @staticmethod
+    def high_pass_filter(img, freq=None, window_size=33, step=1, logger=None):
+        
+        def _disk_mask(r, h, w):
+            mask = disk(r)
+            p_h, p_w = (h - mask.shape[0], w - mask.shape[1])
+            mask = np.pad(
+                mask,
+                [(
+                    (p_h) // 2,
+                    (p_h) // 2 + (p_h % 2)
+                ), (
+                    (p_w) // 2,
+                    (p_w) // 2 + (p_w % 2)
+                )],
+                'constant'
+            ).astype(bool)
+            
+            return mask
+        
+        NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
+        TYPE_ASSERT(freq, [None, float])
+        TYPE_ASSERT(logger, [None, ImageLogger])
+        
+        freq = freq or int(min(img.shape[:2]) * 0.05)
+        
+        fft = np.fft.fftshift(
+            np.fft.fft2(img)
+        )
+        mask = _disk_mask(freq, *img.shape[:2])
+        
+        fft_masked = fft.copy()
+        fft_masked[mask] = 0 + 0j
+        
+        i_fft = np.fft.ifft2(fft_masked)
+        
+        params = {
+            "freq"       : freq,
+            "window_proc": {
+                "window_size": window_size,
+                "step"       : step
+            }
+        }
+        
+        fd_img = compute_by_window(
+            np.abs(i_fft),
+            BuildingDamageExtractor._mean,
+            dst_dtype=np.float64,
+            **params["window_proc"]
+        )
+        
+        fd_img = ndi.zoom(
+            fd_img / fd_img.max(),
+            (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
+            order=0,
+            mode='nearest'
+        )
+        
+        if isinstance(logger, ImageLogger):
+            logger.logging_dict(params, "params", sub_path="high_pass_filter")
+            logger.logging_img(np.log10(np.abs(fft)), "power_spectrum", cmap="jet", sub_path="high_pass_filter")
+            logger.logging_img(mask, "mask", cmap="gray_r", sub_path="high_pass_filter")
+            logger.logging_img(np.log10(np.abs(fft_masked)), "power_spectrum_masked", cmap="jet",
+                               sub_path="high_pass_filter")
+            logger.logging_img(np.abs(i_fft), "IFFT", sub_path="high_pass_filter")
+            logger.logging_img(fd_img, "HPF_gray", sub_path="high_pass_filter")
+            logger.logging_img(fd_img, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
+        
+        return fd_img
     
     def meanshift_and_color_thresholding(self):
         img = self.img
@@ -381,124 +544,75 @@ class BuildingDamageExtractor:
         logger.logging_img(morphologied, "building_damage")
         img = self.img
     
-    
-    def edge_angle_variance_and_hpf(self):
+    def edge_angle_variance_with_hpf(self):
         img = self.img
         ground_truth = self.ground_truth
         logger = self.logger
         
-        params_window_proc = {
-            "Edge Angle Variance": None,
-            "High Pass Filter"   : None
-        }
-        
-        def hpf(img, freq):
-            def _disk_mask(r, h, w):
-                mask = disk(r)
-                p_h, p_w = (h - mask.shape[0], w - mask.shape[1])
-                mask = np.pad(
-                    mask,
-                    [(
-                        (p_h) // 2,
-                        (p_h) // 2 + (p_h % 2)
-                    ), (
-                        (p_w) // 2,
-                        (p_w) // 2 + (p_w % 2)
-                    )],
-                    'constant'
-                ).astype(bool)
-                
-                return mask
-            
-            NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
-            
-            fft = np.fft.fftshift(
-                np.fft.fft2(img)
-            )
-            
-            mask = _disk_mask(freq, *img.shape[:2])
-            
-            fft_masked = fft.copy()
-            fft_masked[mask] = 0 + 0j
-            
-            ifft = np.fft.ifft2(fft_masked)
-            
-            params_window_proc["High Pass Filter"] = {
-                "window_size": 8,
-                "step"       : 2,
-            }
-            
-            fd_img = compute_by_window(
-                np.abs(ifft),
-                lambda img: np.mean(img),
-                dst_dtype=np.float64,
-                **params_window_proc["High Pass Filter"]
-            )
-            
-            fd_img = ndi.zoom(
-                fd_img / fd_img.max(),
-                (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
-                order=0,
-                mode='nearest'
-            )
-            
-            logger.logging_img(np.log10(np.abs(fft)), "power_spector", cmap="jet")
-            logger.logging_img(mask, cmap="gray_r")
-            logger.logging_img(np.log10(np.abs(fft_masked)), "power_spector_masked", cmap="jet")
-            logger.logging_img(np.abs(ifft), "IFFT")
-            logger.logging_img(fd_img, "HPF_gray")
-            logger.logging_img(fd_img, "HPF_colorized", cmap="jet")
-            
-            return fd_img
-        
-        
-        params_finder = ParamsFinder(logger=self.logger)
-        
         if img.ndim != 2:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        
-        # Find Canny Thresholds
-        _, canny_edge = params_finder.find_canny_thresholds(img, ground_truth)
-        
-        edge_proc = EdgeProcedures(img)
-        edge_proc.edge_magnitude = canny_edge
-        
-        params_window_proc["Edge Angle Variance"] = {
-            "window_size": 8,
-            "step"       : 2
-        }
+            img = cv2.cvtColor(
+                img,
+                cv2.COLOR_BGR2GRAY
+            )
         
         # Edge Angle Variance
-        fd_variance = edge_proc.get_feature_by_window(
-            edge_proc.angle_variance_using_mean_vector,
-            **params_window_proc["Edge Angle Variance"]
-        )
-        
-        fd_variance = ndi.zoom(
-            fd_variance / fd_variance.max(),
-            (img.shape[0] / fd_variance.shape[0], img.shape[1] / fd_variance.shape[1]),
-            order=0,
-            mode='nearest'
-        )
-        
-        logger.logging_img(edge_proc.edge_magnitude, "magnitude")
-        logger.logging_img(edge_proc.edge_angle, "angle", cmap="hsv")
-        logger.logging_img(edge_proc.get_angle_colorized_img(), "angle_colorized")
-        logger.logging_img(fd_variance, "angle_variance")
-        logger.logging_img(fd_variance, "angle_variance", cmap="jet")
+        eprint("Calculate: Edge Angle Variance")
+        fd_variance = self.calc_edge_angle_variance(img, logger=logger)
         
         # High-Pass Filter
-        freq = int(min(img.shape[:2]) * 0.05)
-        fd_hpf = hpf(img, freq)
+        eprint("Calculate: High-Pass Filter")
+        fd_hpf = self.high_pass_filter(img, logger=logger)
         
-        logger.logging_dict(params_window_proc, "params_window_proc")
-        
-        # Find Thresholds for Angle-Variance Image
+        # Find Thresholds
+        eprint("Calculate: Thresholds")
+        params_finder = ParamsFinder(logger=logger)
         _, result = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
         
         logger.logging_img(result, "final_result")
         
         return result
+    
+    def edge_pixel_classify(self, window_size=33, step=1):
+        img = self.img
+        logger = self.logger
+        
+        if img.ndim != 2:
+            img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
+        
+        fd = EdgeLineFeatures(img, logger=logger)
+        
+        params = {
+            "canny"      : {
+                "sigma"         : 0.1,
+                "low_threshold" : 0.2,
+                "high_threshold": 0.5
+            },
+            "window_proc": {
+                "window_size": window_size,
+                "step"       : step
+            }
+        }
+        
+        fd.do_canny(**params["canny"])
+        
+        classified = fd.classify()
+        fd.calc_metrics()
+        
+        features = compute_by_window(
+            imgs=classified,
+            # func=self.calc_percentage,
+            func=self.calc_weighted_percentage,
+            n_worker=12,
+            **params["window_proc"]
+        )
+        
+        if logger:
+            logger.logging_img(features, f"features")
+            logger.logging_img(features, f"features_colorized", cmap="jet")
+            
+            logger.logging_dict(params, "params")
+        
+        return features
     
     def __init__(self, img, ground_truth, logger=None) -> None:
         super().__init__()
@@ -541,4 +655,13 @@ if __name__ == '__main__':
     
     inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
     # inst.meanshift_and_color_thresholding()
-    inst.edge_angle_variance_and_hpf()
+    # inst.edge_angle_variance_with_hpf()
+    # inst.edge_pixel_classify()
+    
+    # inst.high_pass_filter(
+    #     cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY),
+    #     window_size=17,
+    #     logger=logger
+    # )
+    
+    inst.edge_angle_variance_with_hpf()
