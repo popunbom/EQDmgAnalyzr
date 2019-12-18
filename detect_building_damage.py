@@ -5,8 +5,10 @@
 # Created by PyCharm at 2019-11-28
 # This is a part of EQDmgAnalyzr
 
+import platform
 from os import path
 from itertools import product
+from time import sleep
 
 from scipy.signal.windows import gaussian
 from skimage.morphology import disk
@@ -26,12 +28,12 @@ from utils.logger import ImageLogger
 from utils.common import eprint
 from utils.evaluation import evaluation_by_confusion_matrix
 
-plt.switch_backend("macosx")
+
+if platform.system() == "Darwin":
+    plt.switch_backend("macosx")
 
 
 class ParamsFinder:
-    PRECISION = 10
-    
     @staticmethod
     def _in_range_percentile(arr, q):
         """
@@ -76,7 +78,7 @@ class ParamsFinder:
         self.logger = logger
         self.logger_sub_path = "params_finder"
     
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth):
+    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
         """
         閾値探索
 
@@ -115,7 +117,8 @@ class ParamsFinder:
         result = None
         
         for q_h_low, q_h_high, q_s_low, q_s_high, q_v_low, q_v_high in tqdm(
-            list(product(np.linspace(50 / self.PRECISION, 50, self.PRECISION), repeat=6))):
+            list(product(np.linspace(50 / precision, 50, precision), repeat=6))
+        ):
             
             h_min, h_max = self._in_range_percentile(masked[:, 0], (q_h_low, q_h_high))
             s_min, s_max = self._in_range_percentile(masked[:, 1], (q_s_low, q_s_high))
@@ -147,10 +150,10 @@ class ParamsFinder:
         
         return reasonable_params, result
     
-    def find_subtracted_thresholds(self, img_a, img_b, ground_truth):
+    def find_subtracted_thresholds(self, img_a, img_b, ground_truth, precision=10):
         """ A & not(B) を計算する """
-        NDARRAY_ASSERT(img_a, ndim=2, dtype=np.uint8)
-        NDARRAY_ASSERT(img_b, ndim=2, dtype=np.uint8)
+        NDARRAY_ASSERT(img_a, ndim=2)
+        NDARRAY_ASSERT(img_b, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img_a, img_b, ignore_ndim=False)
         SAME_SHAPE_ASSERT(img_a, ground_truth, ignore_ndim=False)
@@ -163,7 +166,7 @@ class ParamsFinder:
         result = None
         
         for q_a_low, q_a_high, q_b_low, q_b_high in tqdm(
-            list(product(np.linspace(50 / self.PRECISION, 50, self.PRECISION), repeat=4))):
+            list(product(np.linspace(50 / precision, 50, precision), repeat=4))):
             
             a_min, a_max = self._in_range_percentile(img_a, (q_a_low, q_a_high))
             b_min, b_max = self._in_range_percentile(img_b, (q_b_low, q_b_high))
@@ -335,9 +338,49 @@ class ParamsFinder:
             self.logger.logging_dict(reasonable_params, "params_morphology", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
+    
+    def find_threshold(self, img, ground_truth, logger_suffix="", precision=100):
+        NDARRAY_ASSERT(img, ndim=2)
+        NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
+        TYPE_ASSERT(logger_suffix, str)
+        
+        reasonable_params = {
+            "Score"           : -1,
+            "Confusion Matrix": None,
+            "Range"           : None,
+        }
+        result = None
+        
+        for q_low, q_high in tqdm(list(product(np.linspace(50 / precision, 50, precision), repeat=2))):
+            
+            v_min, v_max = self._in_range_percentile(img, (q_low, q_high))
+            
+            _result = (v_min < img) & (img < v_max)
+            
+            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+            
+            if metrics["F Score"] > reasonable_params["Score"]:
+                reasonable_params = {
+                    "Score"           : metrics["F Score"],
+                    "Confusion Matrix": cm,
+                    "Range"           : [v_min, v_max]
+                }
+                result = _result.copy()
+        
+        if result.dtype != bool:
+            result = (result * 255).astype(np.uint8)
+        
+        if self.logger:
+            self.logger.logging_dict(reasonable_params, f"params",
+                                     sub_path="_".join([x for x in [self.logger_sub_path, logger_suffix] if x]))
+            self.logger.logging_img(result, f"result_thresholded",
+                                    sub_path="_".join([x for x in [self.logger_sub_path, logger_suffix] if x]))
+        
+        return reasonable_params, result
 
 
 class BuildingDamageExtractor:
+    
     
     @staticmethod
     def _mean(roi):
@@ -428,7 +471,7 @@ class BuildingDamageExtractor:
             logger.logging_img(edge_proc.get_angle_colorized_img(), "angle_colorized", sub_path="edge_angle_variance")
             logger.logging_img(fd_img, "angle_variance", sub_path="edge_angle_variance")
             logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
-    
+        
         return fd_img
     
     @staticmethod
@@ -501,14 +544,14 @@ class BuildingDamageExtractor:
         
         return fd_img
     
-    def meanshift_and_color_thresholding(self):
+    def meanshift_and_color_thresholding(self, sp=40, sr=50):
         img = self.img
         ground_truth = self.ground_truth
         NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
-        filter_params = dict(sp=40, sr=50)
+        filter_params = dict(sp=sp, sr=sr)
         
         eprint(
             "Pre-processing (Mean-Shift, {params}) ... ".format(
@@ -554,27 +597,34 @@ class BuildingDamageExtractor:
                 img,
                 cv2.COLOR_BGR2GRAY
             )
+
+        params_finder = ParamsFinder(logger=logger)
         
         # Edge Angle Variance
         eprint("Calculate: Edge Angle Variance")
         fd_variance = self.calc_edge_angle_variance(img, logger=logger)
+
+        # Find Thresholds (only AngleVariance)
+        eprint("Calculate: Thresholds (AngleVar)")
+        params_finder.find_threshold(fd_variance, ground_truth)
         
         # High-Pass Filter
         eprint("Calculate: High-Pass Filter")
         fd_hpf = self.high_pass_filter(img, logger=logger)
         
-        # Find Thresholds
-        eprint("Calculate: Thresholds")
-        params_finder = ParamsFinder(logger=logger)
+        # Find Thresholds (Combination of AngleVariance and HPF)
+        eprint("Calculate: Thresholds (AngleVar - HPF)")
         _, result = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
         
-        logger.logging_img(result, "final_result")
+        if logger:
+            logger.logging_img(result, "building_damage")
         
         return result
     
     def edge_pixel_classify(self, window_size=33, step=1):
         img = self.img
         logger = self.logger
+        ground_truth = self.ground_truth
         
         if img.ndim != 2:
             img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
@@ -611,8 +661,14 @@ class BuildingDamageExtractor:
             logger.logging_img(features, f"features_colorized", cmap="jet")
             
             logger.logging_dict(params, "params")
+            
+        params_finder = ParamsFinder(logger=logger)
+        _, result = params_finder.find_threshold(features, ground_truth, logger_suffix="edge_line_feature")
         
-        return features
+        if logger:
+            logger.logging_img(result, "building_damage")
+        
+        return result
     
     def __init__(self, img, ground_truth, logger=None) -> None:
         super().__init__()
@@ -630,6 +686,7 @@ if __name__ == '__main__':
     # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
     PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
     # PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
+    # PATH_SRC_IMG = "/Users/popunbom/Downloads/test_undamaged.png"
     
     PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
     # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
@@ -654,14 +711,11 @@ if __name__ == '__main__':
     )
     
     inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
-    # inst.meanshift_and_color_thresholding()
-    # inst.edge_angle_variance_with_hpf()
+    
+    inst.meanshift_and_color_thresholding()
     # inst.edge_pixel_classify()
-    
-    # inst.high_pass_filter(
-    #     cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY),
-    #     window_size=17,
-    #     logger=logger
-    # )
-    
-    inst.edge_angle_variance_with_hpf()
+    # inst.edge_angle_variance_with_hpf()
+
+    for _ in range(5):
+        sleep(1.0)
+        print("\a")
