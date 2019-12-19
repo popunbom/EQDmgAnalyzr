@@ -19,15 +19,12 @@ import matplotlib.pyplot as plt
 
 from imgproc.edge import EdgeProcedures
 from imgproc.edge_line_feature import EdgeLineFeatures
-from imgproc.utils import compute_by_window
+from imgproc.utils import compute_by_window, apply_road_mask
 from utils.assertion import NDARRAY_ASSERT, SAME_SHAPE_ASSERT, TYPE_ASSERT
 from utils.logger import ImageLogger
 
 from utils.common import eprint
 from utils.evaluation import evaluation_by_confusion_matrix
-
-plt.switch_backend("macosx")
-
 
 class ParamsFinder:
     PRECISION = 10
@@ -149,8 +146,8 @@ class ParamsFinder:
     
     def find_subtracted_thresholds(self, img_a, img_b, ground_truth):
         """ A & not(B) を計算する """
-        NDARRAY_ASSERT(img_a, ndim=2, dtype=np.uint8)
-        NDARRAY_ASSERT(img_b, ndim=2, dtype=np.uint8)
+        NDARRAY_ASSERT(img_a, ndim=2)
+        NDARRAY_ASSERT(img_b, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img_a, img_b, ignore_ndim=False)
         SAME_SHAPE_ASSERT(img_a, ground_truth, ignore_ndim=False)
@@ -626,42 +623,71 @@ class BuildingDamageExtractor:
         self.logger = logger
 
 
-if __name__ == '__main__':
-    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
-    PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
-    # PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
-    
-    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
-    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
-    
+def test_whole_procedures(path_src_img, path_ground_truth):
     src_img = cv2.imread(
-        PATH_SRC_IMG,
+        path_src_img,
         cv2.IMREAD_COLOR
     )
     
     ground_truth = cv2.imread(
-        PATH_GT_IMG,
+        path_ground_truth,
         cv2.IMREAD_GRAYSCALE
     ).astype(bool)
     
-    logger = ImageLogger(
-        "./tmp/detect_building_damage",
-        suffix=path.splitext(
-            path.basename(
-                PATH_SRC_IMG
-            )
-        )[0]
-    )
+    procedures = [
+        "meanshift_and_color_thresholding",
+        "edge_angle_variance_with_hpf",
+        "edge_pixel_classify"
+    ]
+
+    for proc_name in procedures:
+        eprint("Do processing:", proc_name)
+        logger = ImageLogger(
+            "./tmp/detect_building_damage",
+            prefix=path.splitext(
+                path.basename(
+                    path_src_img
+                )
+            )[0],
+            suffix=proc_name
+        )
+        inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+        inst.__getattribute__(proc_name)()
+
+
+if __name__ == '__main__':
+    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
+    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
+    PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
     
-    inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
+    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
+
+
+    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
+    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
+
+
+    test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+
+    
+    # src_img = cv2.imread(
+    #     PATH_SRC_IMG,
+    #     cv2.IMREAD_COLOR
+    # )
+    
+    # ground_truth = cv2.imread(
+    #     PATH_GT_IMG,
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
+
+    # road_mask = cv2.imread(
+    #     PATH_ROAD_MASK,
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
+    # src_img = apply_road_mask(src_img, road_mask)
+
+
     # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
     # inst.edge_pixel_classify()
-    
-    # inst.high_pass_filter(
-    #     cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY),
-    #     window_size=17,
-    #     logger=logger
-    # )
-    
-    inst.edge_angle_variance_with_hpf()
