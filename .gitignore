@@ -3,6 +3,7 @@
 # Edit at https://www.gitignore.io/?templates=vim,linux,macos,emacs,python,opencv,pycharm,windows,virtualenv,jupyternotebooks,visualstudiocode
 
 ### Project Files ###
+test.py
 data
 data/
 img

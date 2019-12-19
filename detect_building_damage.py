@@ -5,8 +5,10 @@
 # Created by PyCharm at 2019-11-28
 # This is a part of EQDmgAnalyzr
 
+import platform
 from os import path
 from itertools import product
+from time import sleep
 
 from scipy.signal.windows import gaussian
 from skimage.morphology import disk
@@ -26,8 +28,13 @@ from utils.logger import ImageLogger
 from utils.common import eprint
 from utils.evaluation import evaluation_by_confusion_matrix
 
+
+if platform.system() == "Darwin":
+    plt.switch_backend("macosx")
+
+
 class ParamsFinder:
-    PRECISION = 10
+    
     
     @staticmethod
     def _in_range_percentile(arr, q):
@@ -42,8 +49,8 @@ class ParamsFinder:
 
         Returns
         -------
-        (lower, upper)
-            パーセンタイルの範囲
+        lower_bound, upper_bound : tuple
+            パーセンタイルの範囲 (下限, 上限)
         """
         
         if isinstance(q, tuple):
@@ -55,6 +62,7 @@ class ParamsFinder:
             upper_bound = np.percentile(arr, q=(100 - q))
         
         return lower_bound, upper_bound
+    
     
     def __init__(self, logger=None) -> None:
         """
@@ -73,24 +81,30 @@ class ParamsFinder:
         self.logger = logger
         self.logger_sub_path = "params_finder"
     
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth):
+    
+    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
         """
-        閾値探索
+        HSV 色空間における色閾値探索
 
         Parameters
         ----------
         smoothed_img : numpy.ndarray
-            平滑化済み入力画像
-            - 8-Bit RGB カラー
+            平滑化済み入力画像 (8-Bit RGB カラー)
         ground_truth : numpy.ndarray
-            正解画像
-            - 1-Bit (np.bool) 2値化画像
-            - 黒：背景、白：被害領域
+            正解データ (1-Bit)
 
         Returns
         -------
-        dict, numpy.ndarray
-            導き出された閾値と閾値処理を行った画像のタプル
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) の2値化された画像
+            - 黒：背景、白：被害領域
         """
         
         NDARRAY_ASSERT(smoothed_img, ndim=3, dtype=np.uint8)
@@ -112,7 +126,8 @@ class ParamsFinder:
         result = None
         
         for q_h_low, q_h_high, q_s_low, q_s_high, q_v_low, q_v_high in tqdm(
-            list(product(np.linspace(50 / self.PRECISION, 50, self.PRECISION), repeat=6))):
+            list(product(np.linspace(50 / precision, 50, precision), repeat=6))
+        ):
             
             h_min, h_max = self._in_range_percentile(masked[:, 0], (q_h_low, q_h_high))
             s_min, s_max = self._in_range_percentile(masked[:, 1], (q_s_low, q_s_high))
@@ -144,8 +159,42 @@ class ParamsFinder:
         
         return reasonable_params, result
     
-    def find_subtracted_thresholds(self, img_a, img_b, ground_truth):
-        """ A & not(B) を計算する """
+    
+    def find_subtracted_thresholds(self, img_a, img_b, ground_truth, precision=10):
+        """
+        2画像間の差分結果の閾値計算を行う
+        
+        - 画像A, B それぞれで閾値処理
+        - 各画像の最小値、最大値の間をパーセンタイルで分割する
+        - A & not(B) を計算し、正解データと比較
+        - F値が最も高くなるときの画像A, B の閾値を返却する
+        
+        
+        Parameters
+        ----------
+        img_a, img_b :  numpy.ndarray
+            入力画像 (グレースケール画像)
+        ground_truth : numpy.ndarray
+            正解データ (1-Bit)
+        precision : int
+            閾値計算の精度
+        
+        Returns
+        -------
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) の2値化された画像
+            - 黒：背景、白：被害領域
+        `precision`:
+            - precision=N のとき、2N ずつにパーセンタイル分割を行う
+        
+        """
         NDARRAY_ASSERT(img_a, ndim=2)
         NDARRAY_ASSERT(img_b, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
@@ -160,7 +209,7 @@ class ParamsFinder:
         result = None
         
         for q_a_low, q_a_high, q_b_low, q_b_high in tqdm(
-            list(product(np.linspace(50 / self.PRECISION, 50, self.PRECISION), repeat=4))):
+            list(product(np.linspace(50 / precision, 50, precision), repeat=4))):
             
             a_min, a_max = self._in_range_percentile(img_a, (q_a_low, q_a_high))
             b_min, b_max = self._in_range_percentile(img_b, (q_b_low, q_b_high))
@@ -193,7 +242,23 @@ class ParamsFinder:
         
         return reasonable_params, result
     
+    
     def find_canny_thresholds(self, img, ground_truth):
+        """
+        Canny のアルゴリズムの閾値探索を行う
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像 (8−Bit グレースケール画像)
+        ground_truth
+            正解データ (1-Bit 画像)
+
+        Returns
+        -------
+        reasonable_params, result
+        - reasonable_params:
+        
+        """
         from skimage.feature import canny
         
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
@@ -229,13 +294,13 @@ class ParamsFinder:
         
         return reasonable_params, result
     
-    def find_reasonable_morphology(self, result, ground_truth):
+    def find_reasonable_morphology(self, img, ground_truth):
         """
         最適なモルフォロジー処理を模索
 
         Parameters
         ----------
-        result : numpy.ndarray
+        img : numpy.ndarray
             結果画像
             - 1-Bit (np.bool) 2値化画像
             - 黒：背景、白：被害領域
@@ -250,10 +315,10 @@ class ParamsFinder:
             導き出されたパラメータとモルフォロジー処理結果画像のタプル
         """
         
-        NDARRAY_ASSERT(result, ndim=2, dtype=np.bool)
+        NDARRAY_ASSERT(img, ndim=2, dtype=np.bool)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         TYPE_ASSERT(logger, [None, ImageLogger])
-        SAME_SHAPE_ASSERT(result, ground_truth, ignore_ndim=True)
+        SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
         FIND_RANGE = {
             "Kernel Size"       : [3, 5],
@@ -277,8 +342,9 @@ class ParamsFinder:
             }
         }
         
-        result = (result * 255).astype(np.uint8)
+        img = (img * 255).astype(np.uint8)
         
+        result = None
         for kernel_size in FIND_RANGE["Kernel Size"]:
             for n_neighbor in FIND_RANGE["# of Neighbors"]:
                 for operation in FIND_RANGE["Morphology Methods"]:
@@ -298,15 +364,13 @@ class ParamsFinder:
                             )
                         
                         _result = cv2.morphologyEx(
-                            result,
-                            cv2.__dict__[f"MORPH_{operation}"],
+                            src=img,
+                            op=cv2.__dict__[f"MORPH_{operation}"],
                             kernel=kernel,
                             iterations=n_iterations
                         ).astype(bool)
                         
                         cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
-                        
-                        eprint("Score:", metrics["F Score"])
                         
                         if metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                             
@@ -332,14 +396,56 @@ class ParamsFinder:
             self.logger.logging_dict(reasonable_params, "params_morphology", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
+    
+    
+    def find_threshold(self, img, ground_truth, logger_suffix="", precision=100):
+        NDARRAY_ASSERT(img, ndim=2)
+        NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
+        TYPE_ASSERT(logger_suffix, str)
+        
+        reasonable_params = {
+            "Score"           : -1,
+            "Confusion Matrix": None,
+            "Range"           : None,
+        }
+        result = None
+        
+        for q_low, q_high in tqdm(list(product(np.linspace(50 / precision, 50, precision), repeat=2))):
+            
+            v_min, v_max = self._in_range_percentile(img, (q_low, q_high))
+            
+            _result = (v_min < img) & (img < v_max)
+            
+            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+            
+            if metrics["F Score"] > reasonable_params["Score"]:
+                reasonable_params = {
+                    "Score"           : metrics["F Score"],
+                    "Confusion Matrix": cm,
+                    "Range"           : [v_min, v_max]
+                }
+                result = _result.copy()
+        
+        if result.dtype != bool:
+            result = (result * 255).astype(np.uint8)
+        
+        if self.logger:
+            self.logger.logging_dict(reasonable_params, f"params",
+                                     sub_path="_".join([x for x in [self.logger_sub_path, logger_suffix] if x]))
+            self.logger.logging_img(result, f"result_thresholded",
+                                    sub_path="_".join([x for x in [self.logger_sub_path, logger_suffix] if x]))
+        
+        return reasonable_params, result
 
 
 class BuildingDamageExtractor:
     
+    
     @staticmethod
     def _mean(roi):
         return np.mean(roi)
-    
+
+
     @staticmethod
     def calc_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -357,7 +463,8 @@ class BuildingDamageExtractor:
         n_branch = roi[roi == BRANCH].size
         
         return (n_endpoint + n_branch) / n_edges
-    
+
+
     @staticmethod
     def calc_weighted_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -383,7 +490,8 @@ class BuildingDamageExtractor:
         w_branch = np.sum(gaussian_kernel[roi == BRANCH])
         
         return (w_endpoint + w_branch) / w_edges
-    
+
+
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
         NDARRAY_ASSERT(img, ndim=2)
@@ -425,9 +533,10 @@ class BuildingDamageExtractor:
             logger.logging_img(edge_proc.get_angle_colorized_img(), "angle_colorized", sub_path="edge_angle_variance")
             logger.logging_img(fd_img, "angle_variance", sub_path="edge_angle_variance")
             logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
-    
+        
         return fd_img
-    
+
+
     @staticmethod
     def high_pass_filter(img, freq=None, window_size=33, step=1, logger=None):
         
@@ -447,7 +556,8 @@ class BuildingDamageExtractor:
             ).astype(bool)
             
             return mask
-        
+
+
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
         TYPE_ASSERT(freq, [None, float])
         TYPE_ASSERT(logger, [None, ImageLogger])
@@ -497,15 +607,16 @@ class BuildingDamageExtractor:
             logger.logging_img(fd_img, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
         
         return fd_img
-    
-    def meanshift_and_color_thresholding(self):
+
+
+    def meanshift_and_color_thresholding(self, sp=40, sr=50):
         img = self.img
         ground_truth = self.ground_truth
         NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
-        filter_params = dict(sp=40, sr=50)
+        filter_params = dict(sp=sp, sr=sr)
         
         eprint(
             "Pre-processing (Mean-Shift, {params}) ... ".format(
@@ -534,13 +645,14 @@ class BuildingDamageExtractor:
         )
         
         _, morphologied = params_finder.find_reasonable_morphology(
-            result=thresholded,
+            img=thresholded,
             ground_truth=ground_truth,
         )
         
         logger.logging_img(morphologied, "building_damage")
         img = self.img
-    
+
+
     def edge_angle_variance_with_hpf(self):
         img = self.img
         ground_truth = self.ground_truth
@@ -551,27 +663,35 @@ class BuildingDamageExtractor:
                 img,
                 cv2.COLOR_BGR2GRAY
             )
+
+        params_finder = ParamsFinder(logger=logger)
         
         # Edge Angle Variance
         eprint("Calculate: Edge Angle Variance")
         fd_variance = self.calc_edge_angle_variance(img, logger=logger)
+
+        # Find Thresholds (only AngleVariance)
+        eprint("Calculate: Thresholds (AngleVar)")
+        params_finder.find_threshold(fd_variance, ground_truth)
         
         # High-Pass Filter
         eprint("Calculate: High-Pass Filter")
         fd_hpf = self.high_pass_filter(img, logger=logger)
         
-        # Find Thresholds
-        eprint("Calculate: Thresholds")
-        params_finder = ParamsFinder(logger=logger)
+        # Find Thresholds (Combination of AngleVariance and HPF)
+        eprint("Calculate: Thresholds (AngleVar - HPF)")
         _, result = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
         
-        logger.logging_img(result, "final_result")
+        if logger:
+            logger.logging_img(result, "building_damage")
         
         return result
-    
+
+
     def edge_pixel_classify(self, window_size=33, step=1):
         img = self.img
         logger = self.logger
+        ground_truth = self.ground_truth
         
         if img.ndim != 2:
             img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
@@ -608,9 +728,16 @@ class BuildingDamageExtractor:
             logger.logging_img(features, f"features_colorized", cmap="jet")
             
             logger.logging_dict(params, "params")
+
+        params_finder = ParamsFinder(logger=logger)
+        _, result = params_finder.find_threshold(features, ground_truth, logger_suffix="edge_line_feature")
         
-        return features
-    
+        if logger:
+            logger.logging_img(result, "building_damage")
+        
+        return result
+
+
     def __init__(self, img, ground_truth, logger=None) -> None:
         super().__init__()
         
@@ -663,13 +790,10 @@ if __name__ == '__main__':
     # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
     PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
 
-
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
 
-
-    test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
-
+    # test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
     
     # src_img = cv2.imread(
     #     PATH_SRC_IMG,
@@ -688,6 +812,11 @@ if __name__ == '__main__':
     # src_img = apply_road_mask(src_img, road_mask)
 
 
+    inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
     # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
     # inst.edge_pixel_classify()
+
+    for _ in range(5):
+        sleep(1.0)
+        print("\a")
