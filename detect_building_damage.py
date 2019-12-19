@@ -82,9 +82,9 @@ class ParamsFinder:
         
         self.logger = logger
         self.logger_sub_path = "params_finder"
-
     
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10, n_worker=12):
+    
+    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
         """
         HSV 色空間における色閾値探索
 
@@ -349,7 +349,6 @@ class ParamsFinder:
         
         return reasonable_params, result
     
-    
     def find_reasonable_morphology(self, img, ground_truth):
         """
         最適なモルフォロジー処理を模索
@@ -500,8 +499,8 @@ class BuildingDamageExtractor:
     @staticmethod
     def _mean(roi):
         return np.mean(roi)
-    
-    
+
+
     @staticmethod
     def calc_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -519,8 +518,8 @@ class BuildingDamageExtractor:
         n_branch = roi[roi == BRANCH].size
         
         return (n_endpoint + n_branch) / n_edges
-    
-    
+
+
     @staticmethod
     def calc_weighted_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -546,8 +545,8 @@ class BuildingDamageExtractor:
         w_branch = np.sum(gaussian_kernel[roi == BRANCH])
         
         return (w_endpoint + w_branch) / w_edges
-    
-    
+
+
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
         NDARRAY_ASSERT(img, ndim=2)
@@ -806,40 +805,70 @@ class BuildingDamageExtractor:
         self.logger = logger
 
 
-if __name__ == '__main__':
-    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
-    PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
-    # PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
-    # PATH_SRC_IMG = "/Users/popunbom/Downloads/test_undamaged.png"
-    
-    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
-    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
-    
+def test_whole_procedures(path_src_img, path_ground_truth):
     src_img = cv2.imread(
-        PATH_SRC_IMG,
+        path_src_img,
         cv2.IMREAD_COLOR
     )
     
     ground_truth = cv2.imread(
-        PATH_GT_IMG,
+        path_ground_truth,
         cv2.IMREAD_GRAYSCALE
     ).astype(bool)
     
-    logger = ImageLogger(
-        "./tmp/detect_building_damage",
-        suffix=path.splitext(
-            path.basename(
-                PATH_SRC_IMG
-            )
-        )[0]
-    )
+    procedures = [
+        "meanshift_and_color_thresholding",
+        "edge_angle_variance_with_hpf",
+        "edge_pixel_classify"
+    ]
+
+    for proc_name in procedures:
+        eprint("Do processing:", proc_name)
+        logger = ImageLogger(
+            "./tmp/detect_building_damage",
+            prefix=path.splitext(
+                path.basename(
+                    path_src_img
+                )
+            )[0],
+            suffix=proc_name
+        )
+        inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+        inst.__getattribute__(proc_name)()
+
+
+if __name__ == '__main__':
+    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
+    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
+    PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
     
+    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
+    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
+
+    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
+    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
+
+    # test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+    
+    # src_img = cv2.imread(
+    #     PATH_SRC_IMG,
+    #     cv2.IMREAD_COLOR
+    # )
+    # ground_truth = cv2.imread(
+    #     PATH_GT_IMG,
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
+    # road_mask = cv2.imread(
+    #     PATH_ROAD_MASK,
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
+    # src_img = apply_road_mask(src_img, road_mask)
+
     inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
-    
-    inst.meanshift_and_color_thresholding()
-    # inst.edge_pixel_classify()
+    # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
-    
+    # inst.edge_pixel_classify()
+
     for _ in range(5):
         sleep(1.0)
         print("\a")

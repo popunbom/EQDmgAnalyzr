@@ -486,3 +486,24 @@ def zoom_to_img_size(img, shape):
         order=0,
         mode='nearest'
     )
+
+
+def apply_road_mask(img, mask, bg_value=0):
+    NDARRAY_ASSERT(img)
+    NDARRAY_ASSERT(mask, ndim=2)
+    SAME_SHAPE_ASSERT(img, mask, ignore_ndim=True)
+
+    assert check_if_binary_image(mask), \
+        "'mask' must be binary image"
+
+    masked = img.copy()
+    if img.ndim == 2:
+        masked[mask == mask.max()] = bg_value.astype(masked.dtype)
+    else:
+        masked[mask == mask.max(), :] = np.full(
+            masked.shape[2],
+            fill_value=bg_value,
+            dtype=masked.dtype
+        )
+
+    return masked
