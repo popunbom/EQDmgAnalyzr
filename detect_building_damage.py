@@ -34,6 +34,8 @@ if platform.system() == "Darwin":
 
 
 class ParamsFinder:
+    
+    
     @staticmethod
     def _in_range_percentile(arr, q):
         """
@@ -47,8 +49,8 @@ class ParamsFinder:
 
         Returns
         -------
-        (lower, upper)
-            パーセンタイルの範囲
+        lower_bound, upper_bound : tuple
+            パーセンタイルの範囲 (下限, 上限)
         """
         
         if isinstance(q, tuple):
@@ -60,6 +62,7 @@ class ParamsFinder:
             upper_bound = np.percentile(arr, q=(100 - q))
         
         return lower_bound, upper_bound
+    
     
     def __init__(self, logger=None) -> None:
         """
@@ -78,24 +81,30 @@ class ParamsFinder:
         self.logger = logger
         self.logger_sub_path = "params_finder"
     
+    
     def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
         """
-        閾値探索
+        HSV 色空間における色閾値探索
 
         Parameters
         ----------
         smoothed_img : numpy.ndarray
-            平滑化済み入力画像
-            - 8-Bit RGB カラー
+            平滑化済み入力画像 (8-Bit RGB カラー)
         ground_truth : numpy.ndarray
-            正解画像
-            - 1-Bit (np.bool) 2値化画像
-            - 黒：背景、白：被害領域
+            正解データ (1-Bit)
 
         Returns
         -------
-        dict, numpy.ndarray
-            導き出された閾値と閾値処理を行った画像のタプル
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) の2値化された画像
+            - 黒：背景、白：被害領域
         """
         
         NDARRAY_ASSERT(smoothed_img, ndim=3, dtype=np.uint8)
@@ -150,8 +159,42 @@ class ParamsFinder:
         
         return reasonable_params, result
     
+    
     def find_subtracted_thresholds(self, img_a, img_b, ground_truth, precision=10):
-        """ A & not(B) を計算する """
+        """
+        2画像間の差分結果の閾値計算を行う
+        
+        - 画像A, B それぞれで閾値処理
+        - 各画像の最小値、最大値の間をパーセンタイルで分割する
+        - A & not(B) を計算し、正解データと比較
+        - F値が最も高くなるときの画像A, B の閾値を返却する
+        
+        
+        Parameters
+        ----------
+        img_a, img_b :  numpy.ndarray
+            入力画像 (グレースケール画像)
+        ground_truth : numpy.ndarray
+            正解データ (1-Bit)
+        precision : int
+            閾値計算の精度
+        
+        Returns
+        -------
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) の2値化された画像
+            - 黒：背景、白：被害領域
+        `precision`:
+            - precision=N のとき、2N ずつにパーセンタイル分割を行う
+        
+        """
         NDARRAY_ASSERT(img_a, ndim=2)
         NDARRAY_ASSERT(img_b, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
@@ -199,7 +242,23 @@ class ParamsFinder:
         
         return reasonable_params, result
     
+    
     def find_canny_thresholds(self, img, ground_truth):
+        """
+        Canny のアルゴリズムの閾値探索を行う
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像 (8−Bit グレースケール画像)
+        ground_truth
+            正解データ (1-Bit 画像)
+
+        Returns
+        -------
+        reasonable_params, result
+        - reasonable_params:
+        
+        """
         from skimage.feature import canny
         
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
@@ -234,6 +293,7 @@ class ParamsFinder:
             self.logger.logging_img(result, "canny", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
+    
     
     def find_reasonable_morphology(self, result, ground_truth):
         """
@@ -339,6 +399,7 @@ class ParamsFinder:
         
         return reasonable_params, result
     
+    
     def find_threshold(self, img, ground_truth, logger_suffix="", precision=100):
         NDARRAY_ASSERT(img, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
@@ -385,7 +446,8 @@ class BuildingDamageExtractor:
     @staticmethod
     def _mean(roi):
         return np.mean(roi)
-    
+
+
     @staticmethod
     def calc_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -403,7 +465,8 @@ class BuildingDamageExtractor:
         n_branch = roi[roi == BRANCH].size
         
         return (n_endpoint + n_branch) / n_edges
-    
+
+
     @staticmethod
     def calc_weighted_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -429,7 +492,8 @@ class BuildingDamageExtractor:
         w_branch = np.sum(gaussian_kernel[roi == BRANCH])
         
         return (w_endpoint + w_branch) / w_edges
-    
+
+
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
         NDARRAY_ASSERT(img, ndim=2)
@@ -473,7 +537,8 @@ class BuildingDamageExtractor:
             logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
         
         return fd_img
-    
+
+
     @staticmethod
     def high_pass_filter(img, freq=None, window_size=33, step=1, logger=None):
         
@@ -493,7 +558,8 @@ class BuildingDamageExtractor:
             ).astype(bool)
             
             return mask
-        
+
+
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
         TYPE_ASSERT(freq, [None, float])
         TYPE_ASSERT(logger, [None, ImageLogger])
@@ -543,7 +609,8 @@ class BuildingDamageExtractor:
             logger.logging_img(fd_img, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
         
         return fd_img
-    
+
+
     def meanshift_and_color_thresholding(self, sp=40, sr=50):
         img = self.img
         ground_truth = self.ground_truth
@@ -586,7 +653,8 @@ class BuildingDamageExtractor:
         
         logger.logging_img(morphologied, "building_damage")
         img = self.img
-    
+
+
     def edge_angle_variance_with_hpf(self):
         img = self.img
         ground_truth = self.ground_truth
@@ -620,7 +688,8 @@ class BuildingDamageExtractor:
             logger.logging_img(result, "building_damage")
         
         return result
-    
+
+
     def edge_pixel_classify(self, window_size=33, step=1):
         img = self.img
         logger = self.logger
@@ -661,7 +730,7 @@ class BuildingDamageExtractor:
             logger.logging_img(features, f"features_colorized", cmap="jet")
             
             logger.logging_dict(params, "params")
-            
+
         params_finder = ParamsFinder(logger=logger)
         _, result = params_finder.find_threshold(features, ground_truth, logger_suffix="edge_line_feature")
         
@@ -669,7 +738,8 @@ class BuildingDamageExtractor:
             logger.logging_img(result, "building_damage")
         
         return result
-    
+
+
     def __init__(self, img, ground_truth, logger=None) -> None:
         super().__init__()
         
