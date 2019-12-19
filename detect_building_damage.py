@@ -235,13 +235,13 @@ class ParamsFinder:
         
         return reasonable_params, result
     
-    def find_reasonable_morphology(self, result, ground_truth):
+    def find_reasonable_morphology(self, img, ground_truth):
         """
         最適なモルフォロジー処理を模索
 
         Parameters
         ----------
-        result : numpy.ndarray
+        img : numpy.ndarray
             結果画像
             - 1-Bit (np.bool) 2値化画像
             - 黒：背景、白：被害領域
@@ -256,10 +256,10 @@ class ParamsFinder:
             導き出されたパラメータとモルフォロジー処理結果画像のタプル
         """
         
-        NDARRAY_ASSERT(result, ndim=2, dtype=np.bool)
+        NDARRAY_ASSERT(img, ndim=2, dtype=np.bool)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         TYPE_ASSERT(logger, [None, ImageLogger])
-        SAME_SHAPE_ASSERT(result, ground_truth, ignore_ndim=True)
+        SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
         FIND_RANGE = {
             "Kernel Size"       : [3, 5],
@@ -283,8 +283,9 @@ class ParamsFinder:
             }
         }
         
-        result = (result * 255).astype(np.uint8)
+        img = (img * 255).astype(np.uint8)
         
+        result = None
         for kernel_size in FIND_RANGE["Kernel Size"]:
             for n_neighbor in FIND_RANGE["# of Neighbors"]:
                 for operation in FIND_RANGE["Morphology Methods"]:
@@ -304,15 +305,13 @@ class ParamsFinder:
                             )
                         
                         _result = cv2.morphologyEx(
-                            result,
-                            cv2.__dict__[f"MORPH_{operation}"],
+                            src=img,
+                            op=cv2.__dict__[f"MORPH_{operation}"],
                             kernel=kernel,
                             iterations=n_iterations
                         ).astype(bool)
                         
                         cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
-                        
-                        eprint("Score:", metrics["F Score"])
                         
                         if metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                             
@@ -580,7 +579,7 @@ class BuildingDamageExtractor:
         )
         
         _, morphologied = params_finder.find_reasonable_morphology(
-            result=thresholded,
+            img=thresholded,
             ground_truth=ground_truth,
         )
         
