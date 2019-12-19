@@ -84,7 +84,7 @@ class ParamsFinder:
         self.logger_sub_path = "params_finder"
     
     
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
+    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10, n_worker=12):
         """
         HSV 色空間における色閾値探索
 
@@ -198,9 +198,9 @@ class ParamsFinder:
         reasonable_params = max(results, key=lambda e: e["Score"])
 
         img_h, img_s, img_v = [img[:, :, i] for i in range(3)]
-        h_min, h_max = reasonable_params["Range"]["H"]
-        s_min, s_max = reasonable_params["Range"]["S"]
-        v_min, v_max = reasonable_params["Range"]["V"]
+        h_min, h_max, _, _ = reasonable_params["Range"]["H"]
+        s_min, s_max, _, _ = reasonable_params["Range"]["S"]
+        v_min, v_max, _, _ = reasonable_params["Range"]["V"]
         
         result = (
             ((h_min <= img_h) & (img_h <= h_max)) &
@@ -372,7 +372,6 @@ class ParamsFinder:
         
         NDARRAY_ASSERT(img, ndim=2, dtype=np.bool)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
-        TYPE_ASSERT(logger, [None, ImageLogger])
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
         FIND_RANGE = {
@@ -456,7 +455,7 @@ class ParamsFinder:
     def find_threshold(self, img, ground_truth, logger_suffix="", precision=100):
         NDARRAY_ASSERT(img, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
-        TYPE_ASSERT(logger_suffix, str)
+        TYPE_ASSERT(logger_suffix, str, allow_empty=True)
         
         reasonable_params = {
             "Score"           : -1,
@@ -667,6 +666,8 @@ class BuildingDamageExtractor:
     def meanshift_and_color_thresholding(self, sp=40, sr=50):
         img = self.img
         ground_truth = self.ground_truth
+        logger = self.logger
+        
         NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
@@ -848,7 +849,7 @@ if __name__ == '__main__':
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
 
-    # test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+    test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
     
     # src_img = cv2.imread(
     #     PATH_SRC_IMG,
@@ -864,7 +865,7 @@ if __name__ == '__main__':
     # ).astype(bool)
     # src_img = apply_road_mask(src_img, road_mask)
 
-    inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+    # inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
     # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
     # inst.edge_pixel_classify()
