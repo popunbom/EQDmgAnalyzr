@@ -6,6 +6,8 @@
 # This is a part of EQDmgAnalyzr
 
 import platform
+import re
+from multiprocessing import current_process, Pool
 from os import path
 from itertools import product
 from time import sleep
@@ -80,9 +82,9 @@ class ParamsFinder:
         
         self.logger = logger
         self.logger_sub_path = "params_finder"
+
     
-    
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10):
+    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10, n_worker=12):
         """
         HSV 色空間における色閾値探索
 
@@ -107,6 +109,56 @@ class ParamsFinder:
             - 黒：背景、白：被害領域
         """
         
+        global _worker_find_color_threshold_in_hsv
+
+        def _worker_find_color_threshold_in_hsv(_img, _masked, _q_h, _q_s):
+            _q_h_low, _q_h_high = _q_h
+            _q_s_low, _q_s_high = _q_s
+    
+            _img_h, _img_s, _img_v = [_img[:, :, i] for i in range(3)]
+            _masked_h, _masked_s, _masked_v = [_masked[:, i] for i in range(3)]
+
+            _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
+            _desc = f"Worker #{_worker_id:3d}"
+
+            reasonable_params = {
+                "Score": -1,
+                "Range": -1
+            }
+    
+            for _q_v_low, _q_v_high in tqdm(
+                list(product(np.linspace(50 / precision, 50, precision), repeat=2)),
+                desc=_desc,
+                position=_worker_id,
+                leave=False
+            ):
+    
+                _h_min, _h_max = self._in_range_percentile(_masked_h, (_q_h_low, _q_h_high))
+                _s_min, _s_max = self._in_range_percentile(_masked_s, (_q_s_low, _q_s_high))
+                _v_min, _v_max = self._in_range_percentile(_masked_v, (_q_v_low, _q_v_high))
+        
+                _result = (
+                    ((_h_min <= _img_h) & (_img_h <= _h_max)) &
+                    ((_s_min <= _img_s) & (_img_s <= _s_max)) &
+                    ((_v_min <= _img_v) & (_img_v <= _v_max))
+                )
+        
+                _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+
+                if _metrics["F Score"] > reasonable_params["Score"]:
+                    reasonable_params = {
+                        "Score"           : _metrics["F Score"],
+                        "Confusion Matrix": _cm,
+                        "Range"           : {
+                            "H": (_h_min, _h_max, _q_h_low, _q_h_high),
+                            "S": (_s_min, _s_max, _q_s_low, _q_s_high),
+                            "V": (_v_min, _v_max, _q_v_low, _q_v_high),
+                        }
+                    }
+                
+            return reasonable_params
+
+
         NDARRAY_ASSERT(smoothed_img, ndim=3, dtype=np.uint8)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(smoothed_img, ground_truth, ignore_ndim=True)
@@ -115,43 +167,46 @@ class ParamsFinder:
         
         # Convert RGB -> HSV
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h, s, v = [img[:, :, i] for i in range(3)]
-        
-        reasonable_params = {
-            "Score": -1,
-            "Range": -1
-        }
-        
         masked = img[ground_truth]
-        result = None
         
-        for q_h_low, q_h_high, q_s_low, q_s_high, q_v_low, q_v_high in tqdm(
-            list(product(np.linspace(50 / precision, 50, precision), repeat=6))
-        ):
-            
-            h_min, h_max = self._in_range_percentile(masked[:, 0], (q_h_low, q_h_high))
-            s_min, s_max = self._in_range_percentile(masked[:, 1], (q_s_low, q_s_high))
-            v_min, v_max = self._in_range_percentile(masked[:, 2], (q_v_low, q_v_high))
-            
-            _result = (
-                ((h_min <= h) & (h <= h_max)) &
-                ((s_min <= s) & (s <= s_max)) &
-                ((v_min <= v) & (v <= v_max))
+        Q = list(product(np.linspace(50 / precision, 50, precision), repeat=4))
+
+        progress_bar = tqdm(total=len(Q))
+        
+        def _update_progressbar(arg):
+            progress_bar.update()
+        
+        pool = Pool(processes=n_worker, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
+        
+        results = list()
+        for q_h_low, q_h_high, q_s_low, q_s_high in Q:
+            results.append(
+                pool.apply_async(
+                    _worker_find_color_threshold_in_hsv,
+                    args=(img, masked, (q_h_low, q_h_high), (q_s_low, q_s_high)),
+                    callback=_update_progressbar
+                )
             )
-            
-            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
-            
-            if metrics["F Score"] > reasonable_params["Score"]:
-                reasonable_params = {
-                    "Score"           : metrics["F Score"],
-                    "Confusion Matrix": cm,
-                    "Range"           : {
-                        "H": (h_min, h_max, q_h_low, q_h_high),
-                        "S": (s_min, s_max, q_s_low, q_s_high),
-                        "V": (v_min, v_max, q_v_low, q_v_high),
-                    }
-                }
-                result = _result.copy()
+        pool.close()
+        pool.join()
+        
+        try:
+            results = [result.get() for result in results]
+        except Exception as e:
+            print(e)
+        
+        reasonable_params = max(results, key=lambda e: e["Score"])
+
+        img_h, img_s, img_v = [img[:, :, i] for i in range(3)]
+        h_min, h_max = reasonable_params["Range"]["H"]
+        s_min, s_max = reasonable_params["Range"]["S"]
+        v_min, v_max = reasonable_params["Range"]["V"]
+        
+        result = (
+            ((h_min <= img_h) & (img_h <= h_max)) &
+            ((s_min <= img_s) & (img_s <= s_max)) &
+            ((v_min <= img_v) & (img_v <= v_max))
+        )
         
         if self.logger:
             self.logger.logging_dict(reasonable_params, "color_thresolds_in_hsv", sub_path=self.logger_sub_path)
@@ -293,6 +348,7 @@ class ParamsFinder:
             self.logger.logging_img(result, "canny", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
+    
     
     def find_reasonable_morphology(self, img, ground_truth):
         """
@@ -444,8 +500,8 @@ class BuildingDamageExtractor:
     @staticmethod
     def _mean(roi):
         return np.mean(roi)
-
-
+    
+    
     @staticmethod
     def calc_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -463,8 +519,8 @@ class BuildingDamageExtractor:
         n_branch = roi[roi == BRANCH].size
         
         return (n_endpoint + n_branch) / n_edges
-
-
+    
+    
     @staticmethod
     def calc_weighted_percentage(roi):
         LABELS = EdgeLineFeatures.LABELS
@@ -490,8 +546,8 @@ class BuildingDamageExtractor:
         w_branch = np.sum(gaussian_kernel[roi == BRANCH])
         
         return (w_endpoint + w_branch) / w_edges
-
-
+    
+    
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
         NDARRAY_ASSERT(img, ndim=2)
@@ -535,8 +591,8 @@ class BuildingDamageExtractor:
             logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
         
         return fd_img
-
-
+    
+    
     @staticmethod
     def high_pass_filter(img, freq=None, window_size=33, step=1, logger=None):
         
@@ -556,8 +612,8 @@ class BuildingDamageExtractor:
             ).astype(bool)
             
             return mask
-
-
+        
+        
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
         TYPE_ASSERT(freq, [None, float])
         TYPE_ASSERT(logger, [None, ImageLogger])
@@ -607,8 +663,8 @@ class BuildingDamageExtractor:
             logger.logging_img(fd_img, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
         
         return fd_img
-
-
+    
+    
     def meanshift_and_color_thresholding(self, sp=40, sr=50):
         img = self.img
         ground_truth = self.ground_truth
@@ -651,8 +707,8 @@ class BuildingDamageExtractor:
         
         logger.logging_img(morphologied, "building_damage")
         img = self.img
-
-
+    
+    
     def edge_angle_variance_with_hpf(self):
         img = self.img
         ground_truth = self.ground_truth
@@ -663,13 +719,13 @@ class BuildingDamageExtractor:
                 img,
                 cv2.COLOR_BGR2GRAY
             )
-
+        
         params_finder = ParamsFinder(logger=logger)
         
         # Edge Angle Variance
         eprint("Calculate: Edge Angle Variance")
         fd_variance = self.calc_edge_angle_variance(img, logger=logger)
-
+        
         # Find Thresholds (only AngleVariance)
         eprint("Calculate: Thresholds (AngleVar)")
         params_finder.find_threshold(fd_variance, ground_truth)
@@ -686,8 +742,8 @@ class BuildingDamageExtractor:
             logger.logging_img(result, "building_damage")
         
         return result
-
-
+    
+    
     def edge_pixel_classify(self, window_size=33, step=1):
         img = self.img
         logger = self.logger
@@ -728,7 +784,7 @@ class BuildingDamageExtractor:
             logger.logging_img(features, f"features_colorized", cmap="jet")
             
             logger.logging_dict(params, "params")
-
+        
         params_finder = ParamsFinder(logger=logger)
         _, result = params_finder.find_threshold(features, ground_truth, logger_suffix="edge_line_feature")
         
@@ -736,8 +792,8 @@ class BuildingDamageExtractor:
             logger.logging_img(result, "building_damage")
         
         return result
-
-
+    
+    
     def __init__(self, img, ground_truth, logger=None) -> None:
         super().__init__()
         
@@ -783,7 +839,7 @@ if __name__ == '__main__':
     inst.meanshift_and_color_thresholding()
     # inst.edge_pixel_classify()
     # inst.edge_angle_variance_with_hpf()
-
+    
     for _ in range(5):
         sleep(1.0)
         print("\a")
