@@ -23,11 +23,11 @@ import matplotlib.pyplot as plt
 
 from imgproc.edge import EdgeProcedures
 from imgproc.edge_line_feature import EdgeLineFeatures
-from imgproc.utils import compute_by_window
+from imgproc.utils import compute_by_window, zoom_to_img_size, disk_mask
 from utils.assertion import NDARRAY_ASSERT, SAME_SHAPE_ASSERT, TYPE_ASSERT
 from utils.logger import ImageLogger
 
-from utils.common import eprint
+from utils.common import eprint, worker_exception_raisable
 from utils.evaluation import evaluation_by_confusion_matrix
 
 
@@ -36,6 +36,20 @@ if platform.system() == "Darwin":
 
 
 class ParamsFinder:
+    """
+    正解データに基づく閾値探索を行う
+    
+    Attributes
+    ----------
+    logger : ImageLogger, default None
+        ImageLogger インスタンス
+        - 求めた閾値や画像をロギングするために使用する
+    
+    logger_sub_path : str, default "params_finder"
+        ImageLogger により生成されるサブフォルダ名
+        - 各ロギング結果は `logger_sub_path` のフォルダ名の
+          中に格納される
+    """
     
     
     @staticmethod
@@ -73,7 +87,8 @@ class ParamsFinder:
         Parameters
         ----------
         logger : ImageLogger, default is None
-            処理途中の画像をロギングする ImageLogger
+            ImageLogger インスタンス
+            - 処理途中の画像をロギングする
         """
         
         TYPE_ASSERT(logger, [None, ImageLogger])
@@ -84,67 +99,91 @@ class ParamsFinder:
         self.logger_sub_path = "params_finder"
     
     
-    def find_color_threshold_in_hsv(self, smoothed_img, ground_truth, precision=10, n_worker=12):
+    def find_color_threshold_in_hsv(self, img, ground_truth, precision=10, n_worker=12):
         """
         HSV 色空間における色閾値探索
+        
+        - RGB → HSV 変換 を行う
+        
+        - HSV の各チャンネルで閾値処理を行い統合する
+        
+        - 正解データを用いて精度評価を行う
+        
 
         Parameters
         ----------
-        smoothed_img : numpy.ndarray
-            平滑化済み入力画像 (8-Bit RGB カラー)
+        img : numpy.ndarray
+            入力画像 (8-Bit RGB カラー)
         ground_truth : numpy.ndarray
             正解データ (1-Bit)
+        precision : int
+            閾値計算の精度
+        
 
         Returns
         -------
         reasonable_params : dict
             F値が最も高くなったときの閾値
         result : numpy.ndarray
-            その際の閾値処理結果画像
+            その際の閾値処理結果画像 (1-Bit 2値画像)
             
         Notes
         -----
         `ground_truth`:
-            - 1-Bit (bool 型) の2値化された画像
+            - 1-Bit (bool 型) 2値画像
             - 黒：背景、白：被害領域
+        `precision`:
+            - precision=N のとき、H, S, V の各チャンネルに対し
+              2N ずつにパーセンタイル分割を行う
         """
         
         global _worker_find_color_threshold_in_hsv
-
+        
+        
+        # Worker methods executed parallel
+        @worker_exception_raisable
         def _worker_find_color_threshold_in_hsv(_img, _masked, _q_h, _q_s):
+            # Value used in tqdm
+            _WORKER_ID = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
+            _DESC = f"Worker #{_WORKER_ID:3d}"
+            
+            # Unpack arguments
             _q_h_low, _q_h_high = _q_h
             _q_s_low, _q_s_high = _q_s
-    
+            
+            # Split image to each channne
             _img_h, _img_s, _img_v = [_img[:, :, i] for i in range(3)]
             _masked_h, _masked_s, _masked_v = [_masked[:, i] for i in range(3)]
-
-            _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
-            _desc = f"Worker #{_worker_id:3d}"
-
+            
+            # Initialize variables
             reasonable_params = {
                 "Score": -1,
                 "Range": -1
             }
-    
+            
+            # Find thresholds
             for _q_v_low, _q_v_high in tqdm(
                 list(product(np.linspace(50 / precision, 50, precision), repeat=2)),
-                desc=_desc,
-                position=_worker_id,
+                desc=_DESC,
+                position=_WORKER_ID,
                 leave=False
             ):
-    
+                
+                # Generate result
                 _h_min, _h_max = self._in_range_percentile(_masked_h, (_q_h_low, _q_h_high))
                 _s_min, _s_max = self._in_range_percentile(_masked_s, (_q_s_low, _q_s_high))
                 _v_min, _v_max = self._in_range_percentile(_masked_v, (_q_v_low, _q_v_high))
-        
+                
                 _result = (
                     ((_h_min <= _img_h) & (_img_h <= _h_max)) &
                     ((_s_min <= _img_s) & (_img_s <= _s_max)) &
                     ((_v_min <= _img_v) & (_img_v <= _v_max))
                 )
-        
+                
+                # Calculate score
                 _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
-
+                
+                # Update reasonable_params
                 if _metrics["F Score"] > reasonable_params["Score"]:
                     reasonable_params = {
                         "Score"           : _metrics["F Score"],
@@ -155,30 +194,38 @@ class ParamsFinder:
                             "V": (_v_min, _v_max, _q_v_low, _q_v_high),
                         }
                     }
-                
+            
             return reasonable_params
-
-
-        NDARRAY_ASSERT(smoothed_img, ndim=3, dtype=np.uint8)
-        NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
-        SAME_SHAPE_ASSERT(smoothed_img, ground_truth, ignore_ndim=True)
         
-        img = smoothed_img
+        
+        # Check arguments
+        NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
+        NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
+        SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
         # Convert RGB -> HSV
         img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        
+        # `masked`: `img` masked by `ground_truth`
         masked = img[ground_truth]
         
+        # Percentile Split
         Q = list(product(np.linspace(50 / precision, 50, precision), repeat=4))
-
+        
+        # `progress_bar`: whole progress bar
         progress_bar = tqdm(total=len(Q))
+        
         
         def _update_progressbar(arg):
             progress_bar.update()
         
+        
+        # Initialize process pool
         pool = Pool(processes=n_worker, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
         
         results = list()
+        
+        # Multi-Processing !
         for q_h_low, q_h_high, q_s_low, q_s_high in Q:
             results.append(
                 pool.apply_async(
@@ -190,24 +237,28 @@ class ParamsFinder:
         pool.close()
         pool.join()
         
+        # Resolve results
         try:
             results = [result.get() for result in results]
         except Exception as e:
             print(e)
         
+        # Get result whose F-Score is max in results
         reasonable_params = max(results, key=lambda e: e["Score"])
-
+        
         img_h, img_s, img_v = [img[:, :, i] for i in range(3)]
         h_min, h_max, _, _ = reasonable_params["Range"]["H"]
         s_min, s_max, _, _ = reasonable_params["Range"]["S"]
         v_min, v_max, _, _ = reasonable_params["Range"]["V"]
         
+        # Generate image using reasonable thresholds
         result = (
             ((h_min <= img_h) & (img_h <= h_max)) &
             ((s_min <= img_s) & (img_s <= s_max)) &
             ((v_min <= img_v) & (img_v <= v_max))
         )
         
+        # Logging
         if self.logger:
             self.logger.logging_dict(reasonable_params, "color_thresolds_in_hsv", sub_path=self.logger_sub_path)
             self.logger.logging_img(result, "meanshift_thresholded", sub_path=self.logger_sub_path)
@@ -239,12 +290,12 @@ class ParamsFinder:
         reasonable_params : dict
             F値が最も高くなったときの閾値
         result : numpy.ndarray
-            その際の閾値処理結果画像
+            その際の閾値処理結果画像 (1-Bit 2値画像)
             
         Notes
         -----
         `ground_truth`:
-            - 1-Bit (bool 型) の2値化された画像
+            - 1-Bit (bool 型) 2値画像
             - 黒：背景、白：被害領域
         `precision`:
             - precision=N のとき、2N ずつにパーセンタイル分割を行う
@@ -256,6 +307,7 @@ class ParamsFinder:
         SAME_SHAPE_ASSERT(img_a, img_b, ignore_ndim=False)
         SAME_SHAPE_ASSERT(img_a, ground_truth, ignore_ndim=False)
         
+        # Initialize variables
         reasonable_params = {
             "Score"           : -1,
             "Confusion Matrix": None,
@@ -263,9 +315,11 @@ class ParamsFinder:
         }
         result = None
         
+        # Calculate thresholds
         for q_a_low, q_a_high, q_b_low, q_b_high in tqdm(
             list(product(np.linspace(50 / precision, 50, precision), repeat=4))):
             
+            # Generate result
             a_min, a_max = self._in_range_percentile(img_a, (q_a_low, q_a_high))
             b_min, b_max = self._in_range_percentile(img_b, (q_b_low, q_b_high))
             
@@ -274,8 +328,10 @@ class ParamsFinder:
             
             _result = _result_a & np.bitwise_not(_result_b)
             
+            # Calculate scores
             cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
+            # Update reasonable_params
             if metrics["F Score"] > reasonable_params["Score"]:
                 reasonable_params = {
                     "Score"           : metrics["F Score"],
@@ -287,9 +343,7 @@ class ParamsFinder:
                 }
                 result = _result.copy()
         
-        if result.dtype != bool:
-            result = (result * 255).astype(np.uint8)
-        
+        # Logging
         if self.logger:
             self.logger.logging_dict(reasonable_params, f"params_subtracted_thresholds",
                                      sub_path=self.logger_sub_path)
@@ -301,6 +355,7 @@ class ParamsFinder:
     def find_canny_thresholds(self, img, ground_truth):
         """
         Canny のアルゴリズムの閾値探索を行う
+        
         Parameters
         ----------
         img : numpy.ndarray
@@ -310,9 +365,16 @@ class ParamsFinder:
 
         Returns
         -------
-        reasonable_params, result
-        - reasonable_params:
-        
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害領域
         """
         from skimage.feature import canny
         
@@ -320,6 +382,7 @@ class ParamsFinder:
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=False)
         
+        # Initialize variables
         reasonable_params = {
             "Score"           : -1,
             "Confusion Matrix": None,
@@ -327,11 +390,16 @@ class ParamsFinder:
         }
         result = None
         
+        # Calculate thresholds
         for th_1, th_2 in tqdm(list(product(range(256), repeat=2))):
+            
+            # Generate result
             _result = canny(img, low_threshold=th_1, high_threshold=th_2)
             
+            # Calculate scores
             cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
+            # Update reasonable_params
             if metrics["F Score"] > reasonable_params["Score"]:
                 reasonable_params = {
                     "Score"           : metrics["F Score"],
@@ -343,44 +411,70 @@ class ParamsFinder:
         if result.dtype != bool:
             result = (result * 255).astype(np.uint8)
         
+        # Logging
         if self.logger:
             self.logger.logging_dict(reasonable_params, "canny_thresholds", sub_path=self.logger_sub_path)
             self.logger.logging_img(result, "canny", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
     
-    def find_reasonable_morphology(self, img, ground_truth):
+    
+    def find_reasonable_morphology(self, result_img, ground_truth):
         """
         最適なモルフォロジー処理を模索
+        
+        - 正解データとの精度比較により、各種処理結果の補正として
+          最適なモルフォロジー処理を模索する
+          
 
         Parameters
         ----------
-        img : numpy.ndarray
-            結果画像
-            - 1-Bit (np.bool) 2値化画像
-            - 黒：背景、白：被害領域
+        result_img : numpy.ndarray
+            処理結果画像
         ground_truth : numpy.ndarray
-            正解画像
-            - 1-Bit (np.bool) 2値化画像
-            - 黒：背景、白：被害領域
-
+            正解データ
+        
         Returns
         -------
-        dict, numpy.ndarray
-            導き出されたパラメータとモルフォロジー処理結果画像のタプル
+        reasonable_params : dict
+            導き出されたパラメータ
+            - モルフォロジー処理のパターン
+            - 適用時のスコア
+        result : numpy.ndarray
+            - モルフォロジー処理結果画像
+        
+        Notes
+        -----
+        `result_img`:
+            - 1-Bit (bool 型) 2値画像
+            - 黒：無被害、白：被害
+        
+        `ground_truth`:
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害領域
         """
         
-        NDARRAY_ASSERT(img, ndim=2, dtype=np.bool)
+        # Check arguments
+        NDARRAY_ASSERT(result_img, ndim=2, dtype=np.bool)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
-        SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
+        SAME_SHAPE_ASSERT(result_img, ground_truth, ignore_ndim=True)
         
+        # 処理の組み合わせパターン
         FIND_RANGE = {
+            # カーネルの大きさ: 3x3, 5x5
             "Kernel Size"       : [3, 5],
+            # 処理の対象: 4近傍, 8近傍
             "# of Neighbors"    : [4, 8],
+            # モルフォロジー処理
             "Morphology Methods": ["ERODE", "DILATE", "OPEN", "CLOSE"],
+            # 繰り返し回数
             "# of Iterations"   : range(1, 6)
         }
         
+        # Convert input image to uint8 (for `cv2.morphologyEx`)
+        result_img = (result_img * 255).astype(np.uint8)
+        
+        # Initialize variables
         reasonable_params = {
             "Score" : {
                 "Confusion Matrix": -1,
@@ -395,15 +489,15 @@ class ParamsFinder:
                 "Iterations": -1
             }
         }
-        
-        img = (img * 255).astype(np.uint8)
-        
         result = None
+        
+        # Finding reasonable process
         for kernel_size in FIND_RANGE["Kernel Size"]:
             for n_neighbor in FIND_RANGE["# of Neighbors"]:
                 for operation in FIND_RANGE["Morphology Methods"]:
                     for n_iterations in FIND_RANGE["# of Iterations"]:
                         
+                        # Set parameters
                         if n_neighbor == 4:
                             kernel = np.zeros(
                                 (kernel_size, kernel_size),
@@ -417,15 +511,18 @@ class ParamsFinder:
                                 dtype=np.uint8
                             )
                         
+                        # Generate result
                         _result = cv2.morphologyEx(
-                            src=img,
+                            src=result_img,
                             op=cv2.__dict__[f"MORPH_{operation}"],
                             kernel=kernel,
                             iterations=n_iterations
                         ).astype(bool)
                         
+                        # Calculate scores
                         cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
                         
+                        # Update reasonable_params
                         if metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                             
                             reasonable_params = {
@@ -445,6 +542,7 @@ class ParamsFinder:
                             
                             result = _result.copy()
         
+        # Logging
         if self.logger:
             self.logger.logging_img(result, "result_morphology", sub_path=self.logger_sub_path)
             self.logger.logging_dict(reasonable_params, "params_morphology", sub_path=self.logger_sub_path)
@@ -452,7 +550,43 @@ class ParamsFinder:
         return reasonable_params, result
     
     
-    def find_threshold(self, img, ground_truth, logger_suffix="", precision=100):
+    def find_threshold(self, img, ground_truth, precision=100, logger_suffix=""):
+        """
+        正解データを用いて最適な閾値を求める
+        
+        - 各画像の最小値、最大値の間をパーセンタイルで分割し、閾値を生成
+        - 閾値処理を行った結果を正解データと比較する
+        - F値が最も高くなるときの閾値を返却する
+        
+        Parameters
+        ----------
+        img :  numpy.ndarray
+            入力画像 (グレースケール画像)
+        ground_truth : numpy.ndarray
+            正解データ (1-Bit)
+        precision : int, default 100
+            閾値計算の精度
+        logger_suffix : str, default ""
+            ImageLogger によるロギングの際に画像が格納される
+            フォルダの末尾につく文字列を指定する
+        
+        Returns
+        -------
+        reasonable_params : dict
+            F値が最も高くなったときの閾値
+        result : numpy.ndarray
+            その際の閾値処理結果画像 (1-Bit 2値画像)
+            
+        Notes
+        -----
+        `ground_truth`:
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害領域
+        `precision`:
+            - precision=N のとき、2N ずつにパーセンタイル分割を行う
+        
+        """
+        
         NDARRAY_ASSERT(img, ndim=2)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         TYPE_ASSERT(logger_suffix, str, allow_empty=True)
@@ -493,20 +627,66 @@ class ParamsFinder:
 
 
 class BuildingDamageExtractor:
+    """
+    建物被害抽出
+    
+    Attributes
+    ----------
+    img : numpy.ndarray
+        入力画像
+        
+    ground_truth : numpy.ndarray
+        正解データ
+        - 最適な閾値を求めるために使用する
+        
+    logger : ImageLogger, default None
+        ImageLogger インスタンス
+        - 求めた閾値や画像をロギングするために使用する
+    
+    """
     
     
     @staticmethod
-    def _mean(roi):
+    def _f_mean(roi):
+        """
+        特徴量計算: 行列要素の平均値
+        
+        Parameters
+        ----------
+        roi : numpy.ndarray
+            局所領域画像
+        
+        Returns
+        -------
+        np.float
+           特徴量値
+        """
+        
         return np.mean(roi)
-
-
+    
+    
     @staticmethod
-    def calc_percentage(roi):
+    def _f_calc_percentage(roi):
+        """
+        特徴量計算: 「端点」「分岐点」の割合
+        
+        Parameters
+        ----------
+        roi : numpy.ndarray
+            局所領域画像
+        
+        Returns
+        -------
+        value : np.float
+           特徴量値
+        """
+        
         LABELS = EdgeLineFeatures.LABELS
         BG = LABELS["BG"]
         ENDPOINT = LABELS["endpoint"]
         BRANCH = LABELS["branch"]
         
+        # TODO: 分母の値は「領域サイズ」？それとも「エッジ画素数」？
         n_edges = roi.size - roi[roi == BG].size
         # n_edges = roi.size
         
@@ -516,50 +696,92 @@ class BuildingDamageExtractor:
         n_endpoint = roi[roi == ENDPOINT].size
         n_branch = roi[roi == BRANCH].size
         
-        return (n_endpoint + n_branch) / n_edges
-
-
+        value = (n_endpoint + n_branch) / n_edges
+        
+        return value
+    
+    
     @staticmethod
-    def calc_weighted_percentage(roi):
+    def _f_calc_weighted_percentage(roi):
+        """
+        特徴量計算: 「端点」「分岐点」の重み付け割合
+        
+        - ガウシアンカーネルによる重み付けを行う
+        
+        Parameters
+        ----------
+        roi : numpy.ndarray
+            局所領域画像
+        
+        Returns
+        -------
+        value : np.float
+           特徴量値
+        """
         LABELS = EdgeLineFeatures.LABELS
         BG = LABELS["BG"]
         ENDPOINT = LABELS["endpoint"]
         BRANCH = LABELS["branch"]
         
-        # sigma = params["calc_weighted_percentage"]["sigma"]
         sigma = roi.shape[0] / 3
         
+        # Generate Gaussian kernel
         gaussian_kernel = np.outer(
             gaussian(roi.shape[0], std=sigma),
             gaussian(roi.shape[1], std=sigma)
         )
         
-        # w_edges = np.sum(gaussian_kernel) - np.sum(gaussian_kernel[roi == BG])
-        w_edges = np.sum(gaussian_kernel)
+        # TODO: 分母の値は「領域サイズ」？それとも「エッジ画素数」？
+        # w_n_edges = np.sum(gaussian_kernel) - np.sum(gaussian_kernel[roi == BG])
+        w_n_edges = np.sum(gaussian_kernel)
         
-        if w_edges == 0:
+        if w_n_edges == 0:
             return 0
         
-        w_endpoint = np.sum(gaussian_kernel[roi == ENDPOINT])
-        w_branch = np.sum(gaussian_kernel[roi == BRANCH])
+        w_n_endpoint = np.sum(gaussian_kernel[roi == ENDPOINT])
+        w_n_branch = np.sum(gaussian_kernel[roi == BRANCH])
         
-        return (w_endpoint + w_branch) / w_edges
-
-
+        value = (w_n_endpoint + w_n_branch) / w_n_edges
+        
+        return value
+    
+    
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
+        """
+        エッジ角度分散を計算
+        
+        - 入力画像に対し、エッジ抽出を行う
+        - ウィンドウ処理を行い、局所領域内におけるエッジ角度の分散を求める
+        
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像 (グレースケール画像)
+        window_size : int, default 33
+            ウィンドウ処理におけるウィンドウサイズ
+        step : int, default 1
+            ウィンドウ処理におけるずらし幅
+        logger : ImageLogger, default None
+            ImageLogger インスタンス
+            
+        Returns
+        -------
+        features : numpy.ndarray
+            特徴量画像 (32-Bit float 画像)
+
+        """
+        
+        # Check arguments
         NDARRAY_ASSERT(img, ndim=2)
         TYPE_ASSERT(window_size, int)
         TYPE_ASSERT(step, int)
         TYPE_ASSERT(logger, [None, ImageLogger])
         
-        # Find Canny Thresholds
-        # params_finder = ParamsFinder(logger=self.logger)
-        # _, canny_edge = params_finder.find_canny_thresholds(img, ground_truth)
-        
+        # Initialize variables
         edge_proc = EdgeProcedures(img)
-        # edge_proc.edge_magnitude = canny_edge
         
+        # Set parameters
         params = {
             "window_proc": {
                 "window_size": window_size,
@@ -567,50 +789,69 @@ class BuildingDamageExtractor:
             }
         }
         
-        # Edge Angle Variance
-        fd_img = edge_proc.get_feature_by_window(
+        # Calculate Edge Angle Variance in window
+        features = edge_proc.get_feature_by_window(
             edge_proc.angle_variance_using_mean_vector,
             **params["window_proc"]
         )
         
-        fd_img = ndi.zoom(
-            fd_img / fd_img.max(),
-            (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
-            order=0,
-            mode='nearest'
+        # Scale feature image to the same size of input image
+        features = zoom_to_img_size(
+            features / features.max(),
+            img.shape
         )
+        # features = ndi.zoom(
+        #     features / features.max(),
+        #     (img.shape[0] / features.shape[0], img.shape[1] / features.shape[1]),
+        #     order=0,
+        #     mode='nearest'
+        # )
         
+        # Logging
         if isinstance(logger, ImageLogger):
             logger.logging_dict(params, "params", sub_path="edge_angle_variance")
             logger.logging_img(edge_proc.edge_magnitude, "magnitude", sub_path="edge_angle_variance")
             logger.logging_img(edge_proc.edge_angle, "angle", cmap="hsv", sub_path="edge_angle_variance")
             logger.logging_img(edge_proc.get_angle_colorized_img(), "angle_colorized", sub_path="edge_angle_variance")
-            logger.logging_img(fd_img, "angle_variance", sub_path="edge_angle_variance")
-            logger.logging_img(fd_img, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
+            logger.logging_img(features, "angle_variance", sub_path="edge_angle_variance")
+            logger.logging_img(features, "angle_variance", cmap="jet", sub_path="edge_angle_variance")
         
-        return fd_img
+        return features
     
     
     @staticmethod
     def high_pass_filter(img, freq=None, window_size=33, step=1, logger=None):
+        """
+        ハイパスフィルタを適用する
         
-        def _disk_mask(r, h, w):
-            mask = disk(r)
-            p_h, p_w = (h - mask.shape[0], w - mask.shape[1])
-            mask = np.pad(
-                mask,
-                [(
-                    (p_h) // 2,
-                    (p_h) // 2 + (p_h % 2)
-                ), (
-                    (p_w) // 2,
-                    (p_w) // 2 + (p_w % 2)
-                )],
-                'constant'
-            ).astype(bool)
+        - 画像に対し、離散フーリエ変換を行う
+        - 周波数領域上で、ハイパスフィルタを適用する
+        - フーリエ逆変換により、高周波領域を抽出する
+        - ウィンドウ処理を行い、局所領域内における画素値の平均値を求める
+        
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像 (8-Bit グレースケール画像)
+        freq : float, default None
+            ハイパスフィルタの周波数
+        window_size : int, default 33
+            ウィンドウ処理におけるウィンドウサイズ
+        step : int, default 1
+            ウィンドウ処理におけるずらし幅
+        logger : ImageLogger, default None
+            ImageLogger インスタンス
+        
+        Returns
+        -------
+        features : numpy.ndarray
+            特徴量画像 (32-Bit float 画像)
             
-            return mask
-        
+        See Also
+        --------
+        ハイパスフィルタ
+            - 円盤状のマスク画像を適用することで実現する
+        """
         
         NDARRAY_ASSERT(img, ndim=2, dtype=np.uint8)
         TYPE_ASSERT(freq, [None, float])
@@ -618,16 +859,7 @@ class BuildingDamageExtractor:
         
         freq = freq or int(min(img.shape[:2]) * 0.05)
         
-        fft = np.fft.fftshift(
-            np.fft.fft2(img)
-        )
-        mask = _disk_mask(freq, *img.shape[:2])
-        
-        fft_masked = fft.copy()
-        fft_masked[mask] = 0 + 0j
-        
-        i_fft = np.fft.ifft2(fft_masked)
-        
+        # Set parameters
         params = {
             "freq"       : freq,
             "window_proc": {
@@ -636,20 +868,43 @@ class BuildingDamageExtractor:
             }
         }
         
-        fd_img = compute_by_window(
+        # fft: 2-D Fourier Matrix
+        fft = np.fft.fftshift(
+            np.fft.fft2(img)
+        )
+        
+        # mask: High-pass mask
+        mask = disk_mask(freq, *img.shape[:2])
+        
+        # Apply `mask` to `fft`
+        # `mask` の値が '1' の部分を 0値(0+0j) にする
+        fft_masked = fft.copy()
+        fft_masked[mask] = 0 + 0j
+        
+        # i_fft: invert FFT
+        i_fft = np.fft.ifft2(fft_masked)
+        
+        # Calculate Mean of pixel values in window
+        features = compute_by_window(
             np.abs(i_fft),
-            BuildingDamageExtractor._mean,
+            BuildingDamageExtractor._f_mean,
             dst_dtype=np.float64,
             **params["window_proc"]
         )
         
-        fd_img = ndi.zoom(
-            fd_img / fd_img.max(),
-            (img.shape[0] / fd_img.shape[0], img.shape[1] / fd_img.shape[1]),
-            order=0,
-            mode='nearest'
+        # Scale feature image to the same size of input image
+        features = zoom_to_img_size(
+            features / features.max(),
+            img.shape
         )
+        # features = ndi.zoom(
+        #     features / features.max(),
+        #     (img.shape[0] / features.shape[0], img.shape[1] / features.shape[1]),
+        #     order=0,
+        #     mode='nearest'
+        # )
         
+        # Logging
         if isinstance(logger, ImageLogger):
             logger.logging_dict(params, "params", sub_path="high_pass_filter")
             logger.logging_img(np.log10(np.abs(fft)), "power_spectrum", cmap="jet", sub_path="high_pass_filter")
@@ -657,68 +912,130 @@ class BuildingDamageExtractor:
             logger.logging_img(np.log10(np.abs(fft_masked)), "power_spectrum_masked", cmap="jet",
                                sub_path="high_pass_filter")
             logger.logging_img(np.abs(i_fft), "IFFT", sub_path="high_pass_filter")
-            logger.logging_img(fd_img, "HPF_gray", sub_path="high_pass_filter")
-            logger.logging_img(fd_img, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
+            logger.logging_img(features, "HPF_gray", sub_path="high_pass_filter")
+            logger.logging_img(features, "HPF_colorized", cmap="jet", sub_path="high_pass_filter")
         
-        return fd_img
+        return features
     
     
     def meanshift_and_color_thresholding(self, sp=40, sr=50):
+        """
+        建物被害検出: Mean-Shift による減色処理と色閾値処理
+        
+        - 入力画像に Mean-Shift による減色処理を適用する
+        - 正解データをもとに、色空間での閾値を探索し、適用する
+        - 閾値処理結果に対し、モルフォロジー処理による補正処理を行う
+        
+        Parameters
+        ----------
+        sp : float, default 40
+            Mean-Shift における、座標空間における閾値
+        sr : float, default 50
+            Mean-Shift における、色空間における閾値
+        
+        Returns
+        -------
+        building_damage : numpy.ndarray
+            被害抽出結果
+            
+        Notes
+        -----
+        `building_damage`
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害抽出結果
+        """
+        
         img = self.img
         ground_truth = self.ground_truth
         logger = self.logger
         
+        # Check arguments
         NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
-        filter_params = dict(sp=sp, sr=sr)
+        # Set parameters
+        params = {
+            "Mean-Shift": {
+                "type"  : "cv2.pyrMeanShiftFiltering",
+                "params": {
+                    "sp": sp,
+                    "sr": sr
+                }
+            }
+        }
         
         eprint(
-            "Pre-processing (Mean-Shift, {params}) ... ".format(
-                params=", ".join([f"{k}={v}" for k, v in filter_params.items()])
+            "Pre-processing ({proc_name}, {params}) ... ".format(
+                proc_name=params["Mean-Shift"]["type"],
+                params=", ".join([f"{k}={v}" for k, v in params["Mean-Shift"]["params"].items()])
             ),
             end=""
         )
-        smoothed = cv2.pyrMeanShiftFiltering(img, **filter_params)
+        
+        # Mean-Shift
+        smoothed = cv2.pyrMeanShiftFiltering(
+            img,
+            **params["Mean-Shift"]["params"]
+        )
         eprint("done !")
         
-        if self.logger:
-            self.logger.logging_img(smoothed, "filtered")
-            self.logger.logging_dict(
-                dict(
-                    type="cv2.pyrMeanShiftFiltering",
-                    **filter_params
-                ),
-                "filter_detail"
+        # Logging
+        if logger:
+            logger.logging_img(smoothed, "filtered")
+            logger.logging_dict(
+                params,
+                "detail_mean_shift"
             )
         
-        params_finder = ParamsFinder(logger=self.logger)
+        params_finder = ParamsFinder(logger=logger)
         
-        _, thresholded = params_finder.find_color_threshold_in_hsv(
-            smoothed_img=smoothed,
+        # Find: Color thresholds in HSV
+        _, result = params_finder.find_color_threshold_in_hsv(
+            img=smoothed,
             ground_truth=ground_truth,
         )
         
-        _, morphologied = params_finder.find_reasonable_morphology(
-            img=thresholded,
+        # Find: Morphology processing
+        _, building_damage = params_finder.find_reasonable_morphology(
+            result_img=result,
             ground_truth=ground_truth,
         )
         
-        logger.logging_img(morphologied, "building_damage")
-        img = self.img
+        # Logging
+        if logger:
+            logger.logging_img(building_damage, "building_damage")
+        
+        return building_damage
     
     
     def edge_angle_variance_with_hpf(self):
-        img = self.img
+        """
+        建物被害検出: エッジ角度分散＋ハイパスフィルタ
+        
+        - 入力画像からエッジ角度分散と、ハイパスフィルタの特徴量
+          画像を生成する
+        
+        - エッジ角度分散、ハイパスフィルタの両結果に閾値処理を行う
+        
+        - エッジ角度分散の結果からハイパスフィルタの結果を減算し
+          建物抽出結果とする
+          
+        Returns
+        -------
+        building_damage : numpy.ndarray
+            被害抽出結果
+            
+        Notes
+        -----
+        `building_damage`
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害抽出結果
+        """
+        
+        img = self.img_gs
         ground_truth = self.ground_truth
         logger = self.logger
-        
-        if img.ndim != 2:
-            img = cv2.cvtColor(
-                img,
-                cv2.COLOR_BGR2GRAY
-            )
         
         params_finder = ParamsFinder(logger=logger)
         
@@ -726,39 +1043,69 @@ class BuildingDamageExtractor:
         eprint("Calculate: Edge Angle Variance")
         fd_variance = self.calc_edge_angle_variance(img, logger=logger)
         
-        # Find Thresholds (only AngleVariance)
-        eprint("Calculate: Thresholds (AngleVar)")
-        params_finder.find_threshold(fd_variance, ground_truth)
-        
         # High-Pass Filter
         eprint("Calculate: High-Pass Filter")
         fd_hpf = self.high_pass_filter(img, logger=logger)
         
+        # TODO: 各結果画像の閾値処理をどうする？
+        # Find Thresholds (only AngleVariance)
+        eprint("Calculate: Thresholds (AngleVar)")
+        params_finder.find_threshold(fd_variance, ground_truth)
+        
         # Find Thresholds (Combination of AngleVariance and HPF)
         eprint("Calculate: Thresholds (AngleVar - HPF)")
-        _, result = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
+        _, building_damage = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
         
+        # Logging
         if logger:
-            logger.logging_img(result, "building_damage")
+            logger.logging_img(building_damage, "building_damage")
         
-        return result
+        return building_damage
     
     
-    def edge_pixel_classify(self, window_size=33, step=1):
-        img = self.img
+    def edge_pixel_classify(self, sigma=0.1, thresholds=(0.2, 0.5), window_size=33, step=1):
+        """
+        建物被害検出: エッジ画素分類
+        
+        - 入力画像に Canny のエッジ抽出を適用する
+        - 各エッジ画素を「端点」「分岐点」「通過点」に分類する
+        - ウィンドウ処理を行い、局所領域内における「端点」「分岐点」の割合を求める
+        - 正解データによる閾値処理を適用し、建物被害抽出結果とする
+        
+        Parameters
+        ----------
+        sigma : float, default 0.1
+            Canny のアルゴリズムにおける平滑化パラメータ
+        thresholds : tuple of float, default (0.2, 0.5)
+            Canny のアルゴリズムにおける閾値
+        window_size : int, default 33
+            ウィンドウ処理におけるウィンドウサイズ
+        step : int, default 1
+            ウィンドウ処理におけるずらし幅
+
+        Returns
+        -------
+        building_damage : numpy.ndarray
+            被害抽出結果
+            
+        Notes
+        -----
+        `building_damage`
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害抽出結果
+        """
+        img = self.img_gs
         logger = self.logger
         ground_truth = self.ground_truth
         
-        if img.ndim != 2:
-            img = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
+        low_threshold, high_threshold = thresholds
         
-        fd = EdgeLineFeatures(img, logger=logger)
-        
+        # Set parameters
         params = {
             "canny"      : {
-                "sigma"         : 0.1,
-                "low_threshold" : 0.2,
-                "high_threshold": 0.5
+                "sigma"         : sigma,
+                "low_threshold" : low_threshold,
+                "high_threshold": high_threshold
             },
             "window_proc": {
                 "window_size": window_size,
@@ -766,19 +1113,31 @@ class BuildingDamageExtractor:
             }
         }
         
+        fd = EdgeLineFeatures(img, logger=logger)
+        
+        # Apply Canny's Edge Detector
         fd.do_canny(**params["canny"])
         
+        # Do Edge Pixel Classify
         classified = fd.classify()
         fd.calc_metrics()
         
+        # Calculate Proportion of ENDPOINT and BRANCH in window
         features = compute_by_window(
             imgs=classified,
-            # func=self.calc_percentage,
-            func=self.calc_weighted_percentage,
+            # func=self._f_calc_percentage,
+            func=self._f_calc_weighted_percentage,
             n_worker=12,
             **params["window_proc"]
         )
         
+        # Scale feature image to the same size of input image
+        features = zoom_to_img_size(
+            features,
+            img.shape
+        )
+        
+        # Logging
         if logger:
             logger.logging_img(features, f"features")
             logger.logging_img(features, f"features_colorized", cmap="jet")
@@ -786,15 +1145,35 @@ class BuildingDamageExtractor:
             logger.logging_dict(params, "params")
         
         params_finder = ParamsFinder(logger=logger)
-        _, result = params_finder.find_threshold(features, ground_truth, logger_suffix="edge_line_feature")
         
+        # Find thresholds
+        _, building_damage = params_finder.find_threshold(
+            features,
+            ground_truth,
+            logger_suffix="edge_line_feature"
+        )
+        
+        # Logging
         if logger:
-            logger.logging_img(result, "building_damage")
+            logger.logging_img(building_damage, "building_damage")
         
-        return result
+        return building_damage
     
     
     def __init__(self, img, ground_truth, logger=None) -> None:
+        """
+        コンストラクタ
+        
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像
+        ground_truth : numpy.ndarray
+            正解データ
+        logger : ImageLogger
+            ImageLogger インスタンス
+            - 求めた閾値や画像をロギングするために使用する
+        """
         super().__init__()
         
         TYPE_ASSERT(img, np.ndarray)
@@ -804,9 +1183,27 @@ class BuildingDamageExtractor:
         self.img = img
         self.ground_truth = ground_truth
         self.logger = logger
+        
+        self._img_gs = None
+        if img.ndim == 2:
+            self._img_gs = img
+    
+    
+    @property
+    def img_gs(self):
+        """ img_gs : 入力画像 (グレースケール) """
+        if self._img_gs is None:
+            self._img_gs = cv2.cvtColor(
+                self.img,
+                cv2.COLOR_BGR2GRAY
+            )
+        
+        return self._img_gs
 
 
 def test_whole_procedures(path_src_img, path_ground_truth):
+    """ すべての手法をテストする """
+    
     src_img = cv2.imread(
         path_src_img,
         cv2.IMREAD_COLOR
@@ -822,7 +1219,7 @@ def test_whole_procedures(path_src_img, path_ground_truth):
         "edge_angle_variance_with_hpf",
         "edge_pixel_classify"
     ]
-
+    
     for proc_name in procedures:
         eprint("Do processing:", proc_name)
         logger = ImageLogger(
@@ -845,11 +1242,15 @@ if __name__ == '__main__':
     
     # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
     PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
-
+    
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
-
-    test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+    
+    try:
+        test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+    except Exception as e:
+        with open("error.log", "wt") as f:
+            f.write(repr(e))
     
     # src_img = cv2.imread(
     #     PATH_SRC_IMG,
@@ -864,12 +1265,12 @@ if __name__ == '__main__':
     #     cv2.IMREAD_GRAYSCALE
     # ).astype(bool)
     # src_img = apply_road_mask(src_img, road_mask)
-
+    
     # inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
     # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
     # inst.edge_pixel_classify()
-
+    
     for _ in range(5):
         sleep(1.0)
         print("\a")
