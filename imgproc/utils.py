@@ -15,6 +15,7 @@ import numpy as np
 
 from math import ceil
 
+from skimage.morphology import disk
 from tqdm import tqdm, trange
 
 from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDIM_ASSERT, NDARRAY_ASSERT
@@ -318,6 +319,50 @@ def get_window_rect(img_shape, center, wnd_size, ret_type="tuple"):
         return None
 
 
+def disk_mask(r, h, w):
+    """
+    円盤状のマスク画像を生成する
+
+    Parameters
+    ----------
+    r : float
+        半径
+    h, w : int
+        生成される画像の大きさ
+
+    Returns
+    -------
+    mask : numpy.ndarray
+        円盤状マスク
+
+    Notes
+    -----
+    `mask`
+        - 1-Bit (bool 型) 2値画像
+        - 中心から半径 r の部分が黒(0)、それ以外が白(1)
+    """
+    
+    TYPE_ASSERT(r, [int, float])
+    TYPE_ASSERT(h, int)
+    TYPE_ASSERT(w, int)
+    
+    mask = disk(r)
+    p_h, p_w = (h - mask.shape[0], w - mask.shape[1])
+    
+    mask = np.pad(
+        mask,
+        [(
+            (p_h) // 2,
+            (p_h) // 2 + (p_h % 2)
+        ), (
+            (p_w) // 2,
+            (p_w) // 2 + (p_w % 2)
+        )],
+        'constant'
+    ).astype(bool)
+
+    return mask
+
 def divide_by_mask(img, npy_label, dir_name):
     """
     マスク画像をもとに画像分割を行う
@@ -365,7 +410,7 @@ def divide_by_mask(img, npy_label, dir_name):
 
 def check_if_binary_image(img):
     """
-    画像が2値化画像かどうか判定する
+    画像が2値画像かどうか判定する
     
     - numpy.unique によって、行列内の要素値
       を重複なしに取得できることを利用する
@@ -378,7 +423,7 @@ def check_if_binary_image(img):
     Returns
     -------
     bool
-        2値化画像かどうか
+        2値画像かどうか
     """
     
     TYPE_ASSERT(img, np.ndarray)
@@ -479,6 +524,9 @@ def zoom_to_img_size(img, shape):
     
     NDARRAY_ASSERT(img)
     TYPE_ASSERT(shape, tuple)
+    
+    if img.shape[:2] == shape:
+        return img
     
     return ndi.zoom(
         img,
