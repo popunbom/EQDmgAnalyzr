@@ -3,8 +3,10 @@
 
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/08/29
-
+import functools
 import sys
+import traceback
+from multiprocessing import current_process
 
 from tqdm import tqdm
 
@@ -94,3 +96,21 @@ def check_module_avaliable( lib_name ):
     from importlib.util import find_spec
     
     return find_spec( lib_name ) is not None
+
+
+def worker_exception_raisable(func):
+    
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except:
+            # print 'Exception in ' + func.__name__
+            eprint(
+                "[{worker_name}]: Exception raised !".format(
+                    worker_name=current_process().name
+                )
+            )
+            traceback.print_exc()
+    
+    return wrapper
