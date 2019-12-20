@@ -19,7 +19,7 @@ from utils.common import eprint
 
 def labeling_from_mask( img_bin ):
     """
-    2値化画像へのラベリング
+    2値画像へのラベリング
     
     - `cv2.connectedComponents` によるラベリング
     
@@ -28,7 +28,7 @@ def labeling_from_mask( img_bin ):
     Parameters
     ----------
     img_bin : numpy.ndarray
-        入力画像 (2値化画像)
+        入力画像 (2値画像)
 
     Returns
     -------
