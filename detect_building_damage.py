@@ -797,15 +797,10 @@ class BuildingDamageExtractor:
         
         # Scale feature image to the same size of input image
         features = zoom_to_img_size(
-            features / features.max(),
+            # FIXED: Normalize
+            features,
             img.shape
         )
-        # features = ndi.zoom(
-        #     features / features.max(),
-        #     (img.shape[0] / features.shape[0], img.shape[1] / features.shape[1]),
-        #     order=0,
-        #     mode='nearest'
-        # )
         
         # Logging
         if isinstance(logger, ImageLogger):
@@ -894,15 +889,10 @@ class BuildingDamageExtractor:
         
         # Scale feature image to the same size of input image
         features = zoom_to_img_size(
-            features / features.max(),
+            # FIXED: Normalize
+            features,
             img.shape
         )
-        # features = ndi.zoom(
-        #     features / features.max(),
-        #     (img.shape[0] / features.shape[0], img.shape[1] / features.shape[1]),
-        #     order=0,
-        #     mode='nearest'
-        # )
         
         # Logging
         if isinstance(logger, ImageLogger):

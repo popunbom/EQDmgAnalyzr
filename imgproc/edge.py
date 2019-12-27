@@ -255,7 +255,8 @@ class EdgeProcedures(object):
         
         magnitude = np.hypot(dx, dy)
         
-        magnitude /= magnitude.max()
+        # FIXED: Normalize
+        # magnitude /= magnitude.max()
         
         return magnitude
     

@@ -38,7 +38,6 @@ def pil2np( pil_img ):
     # Data depth conversion
     if npy_img.dtype not in [np.uint8, np.float32]:
         npy_img = npy_img.astype( np.float32 )
-        npy_img /= npy_img.max()
     
     if npy_img.ndim == 3:
         if npy_img.shape[2] == 3:

@@ -67,7 +67,8 @@ def detect_road_damage_1(result, road_mask, logger=None):
         cv2.DIST_L2,
         maskSize=5
     )
-    dist = (dist / dist.max() * 255).astype(np.uint8)
+    # FIXED: Normalize
+    # dist = (dist / dist.max() * 255).astype(np.uint8)
     
     if logger:
         logger.logging_img(dist, "distance", cmap="gray")
@@ -116,7 +117,8 @@ def detect_road_damage_2(result, road_mask, logger=None):
         cv2.DIST_L2,
         maskSize=5
     )
-    dist = (dist / dist.max() * 255).astype(np.uint8)
+    # FIXED: Normalize
+    # dist = (dist / dist.max() * 255).astype(np.uint8)
     
     if logger:
         logger.logging_img(dist, "distance", cmap="gray")

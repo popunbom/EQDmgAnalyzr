@@ -95,12 +95,15 @@ class EdgeLineFeatures:
         super().__init__()
         
         NDARRAY_ASSERT(img, ndim=2)
+        assert img.dtype in [np.uint8, bool], \
+            "'img.dtype' must be 'np.uint8' or 'bool'"
         
         self.BG, self.FG = -1, -1
         self.img = img.copy()
-        
-        if self.img.dtype != np.uint8:
-            self.img = (img / img.max()).astype(np.uint8)
+
+        # FIXED: Normalize
+        # if self.img.dtype != np.uint8:
+        #     self.img = (img / img.max()).astype(np.uint8)
         
         if np.unique(self.img).size == 2:
             self.BG, self.FG = np.unique(self.img)
@@ -180,8 +183,12 @@ class EdgeLineFeatures:
         """
         logger = self.logger
         
+        # FIXED: Normalize
+        if self.img.dtype == np.uint8:
+            self.img = (self.img / 255.0).astype(np.float32)
+            
         self.img = canny(
-            (self.img / self.img.max()).astype(np.float32),
+            self.img,
             sigma=sigma,
             low_threshold=low_threshold,
             high_threshold=high_threshold
