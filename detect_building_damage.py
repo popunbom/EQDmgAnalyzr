@@ -1050,7 +1050,7 @@ class BuildingDamageExtractor:
         # TODO: 各結果画像の閾値処理をどうする？
         # Find Thresholds (only AngleVariance)
         eprint("Calculate: Thresholds (AngleVar)")
-        params_finder.find_threshold(fd_variance, ground_truth)
+        params_finder.find_threshold(fd_variance, ground_truth, logger_suffix="angle_variance")
         
         # Find Thresholds (Combination of AngleVariance and HPF)
         eprint("Calculate: Thresholds (AngleVar - HPF)")
@@ -1237,11 +1237,11 @@ def test_whole_procedures(path_src_img, path_ground_truth):
 
 if __name__ == '__main__':
     # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
-    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
-    PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
+    PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
+    # PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
     
-    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
-    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
+    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
+    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
     
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
     # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
