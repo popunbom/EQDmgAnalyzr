@@ -69,7 +69,7 @@ logger.logging_img( fd_img, "fd_colorized", cmap="jet" )
 # )
 #
 #
-# def calc_percentage(roi):
+# def _f_calc_percentage(roi):
 #     LABELS = EdgeLineFeatures.LABELS
 #     BG = LABELS["BG"]
 #     ENDPOINT = LABELS["endpoint"]
@@ -88,18 +88,18 @@ logger.logging_img( fd_img, "fd_colorized", cmap="jet" )
 #     return (n_endpoint + n_branch) / n_edges
 #
 # params = {
-#     "calc_weighted_percentage": {
+#     "_f_calc_weighted_percentage": {
 #         "sigma": 8.0
 #     }
 # }
 #
-# def calc_weighted_percentage(roi):
+# def _f_calc_weighted_percentage(roi):
 #     LABELS = EdgeLineFeatures.LABELS
 #     BG = LABELS["BG"]
 #     ENDPOINT = LABELS["endpoint"]
 #     BRANCH = LABELS["branch"]
 #
-#     sigma = params["calc_weighted_percentage"]["sigma"]
+#     sigma = params["_f_calc_weighted_percentage"]["sigma"]
 #
 #     gaussian_kernel = np.outer(
 #         gaussian(roi.shape[0], std=sigma),
@@ -122,8 +122,8 @@ logger.logging_img( fd_img, "fd_colorized", cmap="jet" )
 # for ws in [5, 9, 17, 33]:
 #     fd_img = compute_by_window(
 #         imgs=classified,
-#         # func=calc_percentage,
-#         func=calc_weighted_percentage,
+#         # func=_f_calc_percentage,
+#         func=_f_calc_weighted_percentage,
 #         window_size=ws,
 #         step=1,
 #         n_worker=12
