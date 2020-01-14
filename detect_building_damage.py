@@ -260,6 +260,7 @@ class ParamsFinder:
         
         # Logging
         if self.logger:
+            # FIXME: typo ('thresold' -> 'threshold')
             self.logger.logging_dict(reasonable_params, "color_thresolds_in_hsv", sub_path=self.logger_sub_path)
             self.logger.logging_img(result, "meanshift_thresholded", sub_path=self.logger_sub_path)
         
@@ -347,7 +348,7 @@ class ParamsFinder:
         if self.logger:
             self.logger.logging_dict(reasonable_params, f"params_subtracted_thresholds",
                                      sub_path=self.logger_sub_path)
-            self.logger.logging_img(result, f"subtact_thresholded", sub_path=self.logger_sub_path)
+            self.logger.logging_img(result, f"subtract_thresholded", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
     
@@ -1194,54 +1195,79 @@ class BuildingDamageExtractor:
 def test_whole_procedures(path_src_img, path_ground_truth):
     """ すべての手法をテストする """
     
+    C_RED = [0, 0, 255]
+    C_ORANGE = [0, 127, 255]
+    
     src_img = cv2.imread(
         path_src_img,
         cv2.IMREAD_COLOR
     )
     
+    # ground_truth = cv2.imread(
+    #     path_ground_truth,
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
     ground_truth = cv2.imread(
         path_ground_truth,
-        cv2.IMREAD_GRAYSCALE
-    ).astype(bool)
+        cv2.IMREAD_COLOR
+    )
     
     procedures = [
         "meanshift_and_color_thresholding",
         "edge_angle_variance_with_hpf",
         "edge_pixel_classify"
     ]
-    
-    for proc_name in procedures:
-        eprint("Do processing:", proc_name)
-        logger = ImageLogger(
-            "./tmp/detect_building_damage",
-            prefix=path.splitext(
-                path.basename(
-                    path_src_img
-                )
-            )[0],
-            suffix=proc_name
-        )
-        inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
-        inst.__getattribute__(proc_name)()
+    for gt_opt in ["GT_BOTH", "GT_RED", "GT_ORANGE"]:
+        if gt_opt == "GT_BOTH":
+            ground_truth = np.all(
+                (ground_truth == C_RED) | (ground_truth == C_ORANGE),
+                axis=2
+            )
+        elif gt_opt == "GT_RED":
+            ground_truth = np.all(
+                ground_truth == C_RED,
+                axis=2
+            )
+        else:
+            ground_truth = np.all(
+                ground_truth == C_ORANGE,
+                axis=2
+            )
+        
+        for proc_name in procedures:
+            eprint("Do processing:", proc_name)
+            logger = ImageLogger(
+                "./tmp/detect_building_damage",
+                prefix=path.splitext(
+                    path.basename(
+                        path_src_img
+                    )
+                )[0],
+                suffix=proc_name + "_no_norm_" + gt_opt
+            )
+            inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+            inst.__getattribute__(proc_name)()
 
 
 if __name__ == '__main__':
-    # PATH_SRC_IMG = "img/resource/aerial_roi1_raw_ms_40_50.png"
-    PATH_SRC_IMG = "img/resource/aerial_roi1_raw_denoised_clipped.png"
-    # PATH_SRC_IMG = "img/resource/aerial_roi2_raw.png"
     
-    PATH_GT_IMG = "img/resource/ground_truth/aerial_roi1.png"
-    # PATH_GT_IMG = "img/resource/ground_truth/aerial_roi2.png"
+    for test_case in range(4, 7):
+        # PATH_SRC_IMG = f"img/resource/aerial_image/aerial_roi{test_case}.png"
+        PATH_SRC_IMG = f"img/resource/aerial_image/fixed_histogram/aerial_roi{test_case}.png"
+        PATH_GT_IMG = f"img/resource/ground_truth/aerial_roi{test_case}.png"
+        
+        eprint(f"Start Experiment: aerial_roi{test_case}")
     
-    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi1.png"
-    # PATH_ROAD_MASK = "img/resource/road_mask/aerial_roi2.png"
-    
-    try:
-        test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
-    except Exception as e:
-        with open("error.log", "wt") as f:
-            f.write(repr(e))
-    
+        try:
+            test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+        except Exception as e:
+            with open("error.log", "wt") as f:
+                f.write(repr(e))
+        
+        for _ in range(5):
+            sleep(1.0)
+            print("\a")
+        
     # src_img = cv2.imread(
     #     PATH_SRC_IMG,
     #     cv2.IMREAD_COLOR
@@ -1260,7 +1286,4 @@ if __name__ == '__main__':
     # inst.meanshift_and_color_thresholding()
     # inst.edge_angle_variance_with_hpf()
     # inst.edge_pixel_classify()
-    
-    for _ in range(5):
-        sleep(1.0)
-        print("\a")
+
