@@ -1,0 +1,100 @@
+{
+  "resource_dirs": {
+    "aerial_image": "./img/resource/aerial_image",
+    "ground_truth": "./img/resource/ground_truth"
+  },
+  "options": {
+    "experiments": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "procedures": [
+      "meanshift_and_color_thresholding",
+      "edge_angle_variance_with_hpf",
+      "edge_pixel_classify"
+    ],
+    "ground_truth": [
+      "GT_BOTH",
+      "GT_RED",
+      "GT_ORANGE"
+    ]
+  },
+  "parameters": [
+    {
+      "experiment_num": 1,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 16,
+          "range_radius": 8,
+          "min_density": 0
+        }
+      }
+    },
+    {
+      "experiment_num": 2,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 12,
+          "range_radius": 8,
+          "min_density": 0
+        }
+      }
+    },
+    {
+      "experiment_num": 3,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 4,
+          "range_radius": 4,
+          "min_density": 0
+        }
+      }
+    },
+    {
+      "experiment_num": 4,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 12,
+          "range_radius": 3,
+          "min_density": 0
+        }
+      }
+    },
+    {
+      "experiment_num": 5,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 4,
+          "range_radius": 1.75,
+          "min_density": 0
+        }
+      }
+    },
+    {
+      "experiment_num": 6,
+      "meanshift_and_color_thresholding": {
+        "func_mean_shift": "pymeanshift.segment",
+        "retval_pos": 0,
+        "params_mean_shift": {
+          "spatial_radius": 4,
+          "range_radius": 1.75,
+          "min_density": 0
+        }
+      }
+    }
+  ]
+}
