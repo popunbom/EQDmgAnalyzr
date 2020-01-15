@@ -248,7 +248,7 @@ class ParamsFinder:
             print(e)
         
         # Get result whose F-Score is max in results
-        reasonable_params = max(results, key=lambda e: e["Score"])
+        reasonable_params = max(results, key=lambda e: e["Score"]["F Score"])
         
         img_h, img_s, img_v = [img[:, :, i] for i in range(3)]
         h_min, h_max, _, _ = reasonable_params["Range"]["H"]
@@ -528,14 +528,14 @@ class ParamsFinder:
                         ).astype(bool)
                         
                         # Calculate scores
-                        cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+                        _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
                         
                         # Update reasonable_params
-                        if metrics["F Score"] > reasonable_params["Score"]["F Score"]:
+                        if _metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                             
                             reasonable_params = {
-                                "Confusion Matrix": cm,
-                                "Score"         : metrics["F Score"],
+                                "Confusion Matrix": _cm,
+                                "Score"         : _metrics,
                                 "Params": {
                                     "Operation" : operation,
                                     "Kernel"    : {
@@ -598,7 +598,9 @@ class ParamsFinder:
         TYPE_ASSERT(logger_suffix, str, allow_empty=True)
         
         reasonable_params = {
-            "Score"           : -1,
+            "Score"           : {
+                "F Score": -1
+            },
             "Confusion Matrix": None,
             "Range"           : None,
         }
