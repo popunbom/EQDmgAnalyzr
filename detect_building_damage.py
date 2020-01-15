@@ -4,9 +4,10 @@
 # Author: Fumiya ENDOU <fantom0779@gmail.com>
 # Created by PyCharm at 2019-11-28
 # This is a part of EQDmgAnalyzr
-
+import json
 import platform
 import re
+import sys
 from multiprocessing import current_process, Pool
 from os import path
 from itertools import product
@@ -24,6 +25,7 @@ from imgproc.edge import EdgeProcedures
 from imgproc.edge_line_feature import EdgeLineFeatures
 from imgproc.utils import compute_by_window, zoom_to_img_size, disk_mask
 from utils.assertion import NDARRAY_ASSERT, SAME_SHAPE_ASSERT, TYPE_ASSERT
+from utils.exception import UnsupportedOption
 from utils.logger import ImageLogger
 
 from utils.common import eprint, worker_exception_raisable
@@ -157,7 +159,9 @@ class ParamsFinder:
             
             # Initialize variables
             reasonable_params = {
-                "Score": -1,
+                "Score": {
+                    "F Score": -1,
+                },
                 "Range": -1
             }
             
@@ -184,7 +188,7 @@ class ParamsFinder:
                 _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
                 
                 # Update reasonable_params
-                if _metrics["F Score"] > reasonable_params["Score"]:
+                if _metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                     reasonable_params = {
                         "Score"           : _metrics,
                         "Confusion Matrix": _cm,
@@ -309,7 +313,9 @@ class ParamsFinder:
         
         # Initialize variables
         reasonable_params = {
-            "Score"           : -1,
+            "Score"           : {
+                "F Score": -1
+            },
             "Confusion Matrix": None,
             "Range"           : None,
         }
@@ -332,7 +338,7 @@ class ParamsFinder:
             _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
             # Update reasonable_params
-            if _metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                 reasonable_params = {
                     "Score"           : _metrics,
                     "Confusion Matrix": _cm,
@@ -384,7 +390,9 @@ class ParamsFinder:
         
         # Initialize variables
         reasonable_params = {
-            "Score"           : -1,
+            "Score"           : {
+                "F Score": -1
+            },
             "Confusion Matrix": None,
             "Thresholds"      : None,
         }
@@ -400,7 +408,7 @@ class ParamsFinder:
             _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
             # Update reasonable_params
-            if _metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                 reasonable_params = {
                     "Score"           : _metrics,
                     "Confusion Matrix": _cm,
@@ -476,8 +484,8 @@ class ParamsFinder:
         
         # Initialize variables
         reasonable_params = {
+            "Confusion Matrix": dict(),
             "Score" : {
-                "Confusion Matrix": -1,
                 "F Score"         : -1,
             },
             "Params": {
@@ -604,7 +612,7 @@ class ParamsFinder:
             
             _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
-            if _metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                 reasonable_params = {
                     "Score"           : _metrics,
                     "Confusion Matrix": _cm,
@@ -952,6 +960,9 @@ class BuildingDamageExtractor:
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
         TYPE_ASSERT(params_mean_shift, dict)
+        
+        if isinstance(func_mean_shift, str):
+            func_mean_shift = eval(func_mean_shift)
 
         assert callable(func_mean_shift), "argument 'func_mean_shift' must be callable object"
         
@@ -1224,8 +1235,8 @@ def test_whole_procedures(path_src_img, path_ground_truth, parameters):
     
     procedures = [
         "meanshift_and_color_thresholding",
-        "edge_angle_variance_with_hpf",
-        "edge_pixel_classify"
+        # "edge_angle_variance_with_hpf",
+        # "edge_pixel_classify"
     ]
     
     # for gt_opt in ["GT_BOTH", "GT_RED", "GT_ORANGE"]:
@@ -1265,101 +1276,102 @@ def test_whole_procedures(path_src_img, path_ground_truth, parameters):
                 inst.__getattribute__(proc_name)()
 
 
+def do_experiment(experiment_parameters):
+    
+    def extract_parameters(parameters, case_num, procedure_name):
+        parameters_by_case = [
+            p
+            for p in parameters
+            if p["experiment_num"] == case_num
+        ]
+        
+        if parameters_by_case:
+            parameters_by_case = parameters_by_case[0]
+            if procedure_name in parameters_by_case:
+                return parameters_by_case[procedure_name]
+            
+        return dict()
+    
+    C_RED = [0, 0, 255]
+    C_ORANGE = [0, 127, 255]
+    
+    p = experiment_parameters
+    
+    for case_num in p["options"]["experiments"]:
+        src_img, gt_img = [
+            cv2.imread(
+                path.join(
+                    p["resource_dirs"][img_type],
+                    "aerial_roi{n}.png".format(n=case_num)
+                ),
+                cv2.IMREAD_COLOR
+            )
+            for img_type in ["aerial_image", "ground_truth"]
+        ]
+    
+        for gt_opt in p["options"]["ground_truth"]:
+            
+            ground_truth = None
+            
+            if gt_opt == "GT_BOTH":
+                ground_truth = np.all(
+                    (gt_img == C_RED) | (gt_img == C_ORANGE),
+                    axis=2
+                )
+            elif gt_opt == "GT_RED":
+                ground_truth = np.all(
+                    gt_img == C_RED,
+                    axis=2
+                )
+            elif gt_opt == "GT_ORANGE":
+                ground_truth = np.all(
+                    gt_img == C_ORANGE,
+                    axis=2
+                )
+                
+            for procedure_name in p["options"]["procedures"]:
+                eprint("Experiment Procedure:", procedure_name)
+                
+                logger = ImageLogger(
+                    p["resource_dirs"]["logging"],
+                    prefix="aerial_roi{n}".format(n=case_num),
+                    suffix=procedure_name + "_no_norm_" + gt_opt
+                )
+                inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
+                
+                inst.__getattribute__(procedure_name)(
+                    **extract_parameters(p["parameters"], case_num, procedure_name)
+                )
+                
+                # BEEP 5 TIMES (for notification)
+                for _ in range(5):
+                    sleep(1.0)
+                    print("\a", end="", flush=True)
+            
+            for _ in range(5):
+                sleep(1.0)
+                print("\a", end="", flush=True)
+
 if __name__ == '__main__':
     
-    parameters = [
-        # Exp No.1
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 16,
-                    "range_radius": 8,
-                    "min_density": 0
-                }
-            },
-        },
-        # Exp No.2
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 12,
-                    "range_radius": 8,
-                    "min_density": 0
-                }
-            },
-        },
-        # Exp No.3
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 4,
-                    "range_radius": 4,
-                    "min_density": 0
-                }
-            },
-        },
-        # Exp No.4
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 12,
-                    "range_radius": 3,
-                    "min_density": 0
-                }
-            },
-        },
-        # Exp No.5
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 4,
-                    "range_radius": 1.75,
-                    "min_density": 0
-                }
-            },
-        },
-        # Exp No.6
-        {
-            "meanshift_and_color_thresholding": {
-                "func_mean_shift": pymeanshift.segment,
-                "retval_pos": 0,
-                "params_mean_shift": {
-                    "spatial_radius": 4,
-                    "range_radius": 1.75,
-                    "min_density": 0
-                }
-            },
-        },
-    ]
+    argc, argv = len(sys.argv), sys.argv
     
+    if argc != 2:
+        eprint(
+            "usage: {prog} [experiment-json-file]".format(
+                prog=argv[0]
+            )
+        )
+        sys.exit(-1)
     
-    for test_case in range(1, 7):
-        # PATH_SRC_IMG = f"img/resource/aerial_image/aerial_roi{test_case}.png"
-        PATH_SRC_IMG = f"img/resource/aerial_image/fixed_histogram/aerial_roi{test_case}.png"
-        PATH_GT_IMG = f"img/resource/ground_truth/aerial_roi{test_case}.png"
-        
-        eprint(f"Start Experiment: aerial_roi{test_case}")
-    
+    else:
         try:
-            test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG, parameters[test_case - 1])
+            do_experiment(json.load(open(argv[1])))
+        
         except Exception as e:
             import traceback
             traceback.print_exc()
             with open("error.log", "wt") as f:
                 f.write(repr(e))
-        
-        for _ in range(5):
-            sleep(1.0)
-            print("\a")
-    
-
+            # for DEBUG
+            raise e
