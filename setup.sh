@@ -48,5 +48,20 @@ pip install --upgrade pip
 # Install packages
 pip install -r ./requirements.txt
 
+# Install: pymeanshift
+echo "Install: pymeanshift"
+VENV_PYTHON=$(which python3)
+
+if [[ $(grep -Ei "debian" /etc/*release) ]]; then
+  sudo apt install -y python-dev python3-dev python-numpy-dev python3-numpy-dev
+fi
+
+git clone "https://github.com/fjean/pymeanshift/wiki/Install"
+
+cd pymeanshift && sudo ${VENV_PYTHON} setup.py install
+
+echo "Clean-Up: pymeanshift"
+cd .. && sudo rm -vrf ./pymeanshift
+
 echo "Success to Setup !"
 echo "To activete venv, run 'source ${ACTIVATE_SCRIPT}'"
