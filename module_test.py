@@ -61,7 +61,7 @@ logger.logging_img( fd_img, "fd_colorized", cmap="jet" )
 #
 # classified = fd.classify()
 #
-# fd.calc_metrics()
+# fd.recalc()
 #
 # classified = cv2.imread(
 #     "./tmp/module_test/edge_line_feature_20191214_170535/classified.png",

@@ -17,7 +17,7 @@ import pyperclip
 
 from utils.common import eprint
 
-RESULT_ROOT_DIR = "./tmp/detect_building_damage"
+RESULT_ROOT_DIR = "./tmp/detect_building_damage/2020_01_09_whole_test"
 
 EXP_PREFIX = "aerial_roi"
 
@@ -65,7 +65,11 @@ def gen_result(exp_num, exp_name):
         result += dedent(f"""
             [{d['Range']['img_a'][0]:.4f}, {d['Range']['img_a'][1]:.4f}]
             [{d['Range']['img_b'][0]:.4f}, {d['Range']['img_b'][1]:.4f}]
-            {d['Score']:.4f}
+            {d['Score']['Accuracy']:.04f}
+            {d['Score']['Precision']:.04f}
+            {d['Score']['Recall']:.04f}
+            {d['Score']['Specificity']:.04f}
+            {d['Score']['F Score']:.04f}
         """).lstrip('\n')
     
     elif exp_name == "edge_pixel_classify":
@@ -83,7 +87,11 @@ def gen_result(exp_num, exp_name):
     
         result += dedent(f"""
             [{d['Range'][0]:.4f}, {d['Range'][1]:.4f}]
-            {d['Score']:.4f}
+            {d['Score']['Accuracy']:.04f}
+            {d['Score']['Precision']:.04f}
+            {d['Score']['Recall']:.04f}
+            {d['Score']['Specificity']:.04f}
+            {d['Score']['F Score']:.04f}
         """).lstrip('\n')
     
     elif exp_name == "meanshift_and_color_thresholding":
@@ -116,7 +124,11 @@ def gen_result(exp_num, exp_name):
             {d['Params']['Kernel']['#_of_Neighbor']}近傍
             {m[d['Params']['Operation']]}
             {d['Params']['Iterations']}回
-            {d['Score']['F Score']:.4f}
+            {d['Score']['Accuracy']:.04f}
+            {d['Score']['Precision']:.04f}
+            {d['Score']['Recall']:.04f}
+            {d['Score']['Specificity']:.04f}
+            {d['Score']['F Score']:.04f}
         """).lstrip('\n')
         
 

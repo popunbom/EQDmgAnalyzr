@@ -13,13 +13,12 @@ from itertools import product
 from time import sleep
 
 from scipy.signal.windows import gaussian
-from skimage.morphology import disk
 from tqdm import tqdm
 
 import cv2
 import numpy as np
-from scipy import ndimage as ndi
 import matplotlib.pyplot as plt
+import pymeanshift
 
 from imgproc.edge import EdgeProcedures
 from imgproc.edge_line_feature import EdgeLineFeatures
@@ -29,6 +28,7 @@ from utils.logger import ImageLogger
 
 from utils.common import eprint, worker_exception_raisable
 from utils.evaluation import evaluation_by_confusion_matrix
+from utils.reflection import get_qualified_class_name
 
 
 if platform.system() == "Darwin":
@@ -186,7 +186,7 @@ class ParamsFinder:
                 # Update reasonable_params
                 if _metrics["F Score"] > reasonable_params["Score"]:
                     reasonable_params = {
-                        "Score"           : _metrics["F Score"],
+                        "Score"           : _metrics,
                         "Confusion Matrix": _cm,
                         "Range"           : {
                             "H": (_h_min, _h_max, _q_h_low, _q_h_high),
@@ -260,8 +260,7 @@ class ParamsFinder:
         
         # Logging
         if self.logger:
-            # FIXME: typo ('thresold' -> 'threshold')
-            self.logger.logging_dict(reasonable_params, "color_thresolds_in_hsv", sub_path=self.logger_sub_path)
+            self.logger.logging_dict(reasonable_params, "color_thresholds_in_hsv", sub_path=self.logger_sub_path)
             self.logger.logging_img(result, "meanshift_thresholded", sub_path=self.logger_sub_path)
         
         return reasonable_params, result
@@ -330,13 +329,13 @@ class ParamsFinder:
             _result = _result_a & np.bitwise_not(_result_b)
             
             # Calculate scores
-            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+            _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
             # Update reasonable_params
-            if metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]:
                 reasonable_params = {
-                    "Score"           : metrics["F Score"],
-                    "Confusion Matrix": cm,
+                    "Score"           : _metrics,
+                    "Confusion Matrix": _cm,
                     "Range"           : {
                         "img_a": [a_min, a_max],
                         "img_b": [b_min, b_max],
@@ -398,13 +397,13 @@ class ParamsFinder:
             _result = canny(img, low_threshold=th_1, high_threshold=th_2)
             
             # Calculate scores
-            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+            _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
             # Update reasonable_params
-            if metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]:
                 reasonable_params = {
-                    "Score"           : metrics["F Score"],
-                    "Confusion Matrix": cm,
+                    "Score"           : _metrics,
+                    "Confusion Matrix": _cm,
                     "Thresholds"      : list([th_1, th_2])
                 }
                 result = _result.copy()
@@ -527,10 +526,8 @@ class ParamsFinder:
                         if metrics["F Score"] > reasonable_params["Score"]["F Score"]:
                             
                             reasonable_params = {
-                                "Score" : {
-                                    "Confusion Matrix": cm,
-                                    "F Score"         : metrics["F Score"],
-                                },
+                                "Confusion Matrix": cm,
+                                "Score"         : metrics["F Score"],
                                 "Params": {
                                     "Operation" : operation,
                                     "Kernel"    : {
@@ -605,12 +602,12 @@ class ParamsFinder:
             
             _result = (v_min < img) & (img < v_max)
             
-            cm, metrics = evaluation_by_confusion_matrix(_result, ground_truth)
+            _cm, _metrics = evaluation_by_confusion_matrix(_result, ground_truth)
             
-            if metrics["F Score"] > reasonable_params["Score"]:
+            if _metrics["F Score"] > reasonable_params["Score"]:
                 reasonable_params = {
-                    "Score"           : metrics["F Score"],
-                    "Confusion Matrix": cm,
+                    "Score"           : _metrics,
+                    "Confusion Matrix": _cm,
                     "Range"           : [v_min, v_max]
                 }
                 result = _result.copy()
@@ -909,7 +906,11 @@ class BuildingDamageExtractor:
         return features
     
     
-    def meanshift_and_color_thresholding(self, sp=40, sr=50):
+    def meanshift_and_color_thresholding(self,
+                                         func_mean_shift=cv2.pyrMeanShiftFiltering,
+                                         params_mean_shift={ "sp": 40, "sr": 50 },
+                                         retval_pos=None
+     ):
         """
         建物被害検出: Mean-Shift による減色処理と色閾値処理
         
@@ -919,10 +920,13 @@ class BuildingDamageExtractor:
         
         Parameters
         ----------
-        sp : float, default 40
-            Mean-Shift における、座標空間における閾値
-        sr : float, default 50
-            Mean-Shift における、色空間における閾値
+        func_mean_shift : callable object
+            Mean-Shift 処理関数
+        params_mean_shift : dict
+            Mean-Shift 処理関数に渡されるパラメータ
+        retval_pos : int, default None
+            Mean-Shift 処理関数の返却値が複数の場合、
+            領域分割後の画像が格納されている位置を指定する
         
         Returns
         -------
@@ -931,6 +935,8 @@ class BuildingDamageExtractor:
             
         Notes
         -----
+        `func_mean_shift`
+            - 第1引数に画像を取れるようになっている必要がある
         `building_damage`
             - 1-Bit (bool 型) 2値画像
             - 黒：背景、白：被害抽出結果
@@ -945,30 +951,38 @@ class BuildingDamageExtractor:
         NDARRAY_ASSERT(ground_truth, ndim=2, dtype=np.bool)
         SAME_SHAPE_ASSERT(img, ground_truth, ignore_ndim=True)
         
+        TYPE_ASSERT(params_mean_shift, dict)
+
+        assert callable(func_mean_shift), "argument 'func_mean_shift' must be callable object"
+        
         # Set parameters
         params = {
             "Mean-Shift": {
-                "type"  : "cv2.pyrMeanShiftFiltering",
-                "params": {
-                    "sp": sp,
-                    "sr": sr
-                }
+                "func"  : get_qualified_class_name(func_mean_shift, wrap_with_quotes=False),
+                "params": params_mean_shift
             }
         }
         
         eprint(
-            "Pre-processing ({proc_name}, {params}) ... ".format(
-                proc_name=params["Mean-Shift"]["type"],
+            "Pre-processing ({func_name}, {params}) ... ".format(
+                func_name=params["Mean-Shift"]["func"],
                 params=", ".join([f"{k}={v}" for k, v in params["Mean-Shift"]["params"].items()])
             ),
             end=""
         )
         
         # Mean-Shift
-        smoothed = cv2.pyrMeanShiftFiltering(
-            img,
-            **params["Mean-Shift"]["params"]
-        )
+        if retval_pos is None:
+            smoothed = func_mean_shift(
+                img,
+                **params_mean_shift
+            )
+        else:
+            smoothed = func_mean_shift(
+                img,
+                **params_mean_shift
+            )[retval_pos]
+        
         eprint("done !")
         
         # Logging
@@ -986,7 +1000,7 @@ class BuildingDamageExtractor:
             img=smoothed,
             ground_truth=ground_truth,
         )
-        
+
         # Find: Morphology processing
         _, building_damage = params_finder.find_reasonable_morphology(
             result_img=result,
@@ -1192,22 +1206,18 @@ class BuildingDamageExtractor:
         return self._img_gs
 
 
-def test_whole_procedures(path_src_img, path_ground_truth):
+def test_whole_procedures(path_src_img, path_ground_truth, parameters):
     """ すべての手法をテストする """
     
     C_RED = [0, 0, 255]
     C_ORANGE = [0, 127, 255]
     
-    src_img = cv2.imread(
+    IMG = cv2.imread(
         path_src_img,
         cv2.IMREAD_COLOR
     )
     
-    # ground_truth = cv2.imread(
-    #     path_ground_truth,
-    #     cv2.IMREAD_GRAYSCALE
-    # ).astype(bool)
-    ground_truth = cv2.imread(
+    GT = cv2.imread(
         path_ground_truth,
         cv2.IMREAD_COLOR
     )
@@ -1217,20 +1227,22 @@ def test_whole_procedures(path_src_img, path_ground_truth):
         "edge_angle_variance_with_hpf",
         "edge_pixel_classify"
     ]
-    for gt_opt in ["GT_BOTH", "GT_RED", "GT_ORANGE"]:
+    
+    # for gt_opt in ["GT_BOTH", "GT_RED", "GT_ORANGE"]:
+    for gt_opt in ["GT_RED", "GT_ORANGE"]:
         if gt_opt == "GT_BOTH":
             ground_truth = np.all(
-                (ground_truth == C_RED) | (ground_truth == C_ORANGE),
+                (GT == C_RED) | (GT == C_ORANGE),
                 axis=2
             )
         elif gt_opt == "GT_RED":
             ground_truth = np.all(
-                ground_truth == C_RED,
+                GT == C_RED,
                 axis=2
             )
         else:
             ground_truth = np.all(
-                ground_truth == C_ORANGE,
+                GT == C_ORANGE,
                 axis=2
             )
         
@@ -1245,13 +1257,93 @@ def test_whole_procedures(path_src_img, path_ground_truth):
                 )[0],
                 suffix=proc_name + "_no_norm_" + gt_opt
             )
-            inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
-            inst.__getattribute__(proc_name)()
+            inst = BuildingDamageExtractor(IMG, ground_truth, logger=logger)
+            
+            if proc_name in parameters:
+                inst.__getattribute__(proc_name)(**parameters[proc_name])
+            else:
+                inst.__getattribute__(proc_name)()
 
 
 if __name__ == '__main__':
     
-    for test_case in range(4, 7):
+    parameters = [
+        # Exp No.1
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 16,
+                    "range_radius": 8,
+                    "min_density": 0
+                }
+            },
+        },
+        # Exp No.2
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 12,
+                    "range_radius": 8,
+                    "min_density": 0
+                }
+            },
+        },
+        # Exp No.3
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 4,
+                    "range_radius": 4,
+                    "min_density": 0
+                }
+            },
+        },
+        # Exp No.4
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 12,
+                    "range_radius": 3,
+                    "min_density": 0
+                }
+            },
+        },
+        # Exp No.5
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 4,
+                    "range_radius": 1.75,
+                    "min_density": 0
+                }
+            },
+        },
+        # Exp No.6
+        {
+            "meanshift_and_color_thresholding": {
+                "func_mean_shift": pymeanshift.segment,
+                "retval_pos": 0,
+                "params_mean_shift": {
+                    "spatial_radius": 4,
+                    "range_radius": 1.75,
+                    "min_density": 0
+                }
+            },
+        },
+    ]
+    
+    
+    for test_case in range(1, 7):
         # PATH_SRC_IMG = f"img/resource/aerial_image/aerial_roi{test_case}.png"
         PATH_SRC_IMG = f"img/resource/aerial_image/fixed_histogram/aerial_roi{test_case}.png"
         PATH_GT_IMG = f"img/resource/ground_truth/aerial_roi{test_case}.png"
@@ -1259,31 +1351,15 @@ if __name__ == '__main__':
         eprint(f"Start Experiment: aerial_roi{test_case}")
     
         try:
-            test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG)
+            test_whole_procedures(PATH_SRC_IMG, PATH_GT_IMG, parameters[test_case - 1])
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             with open("error.log", "wt") as f:
                 f.write(repr(e))
         
         for _ in range(5):
             sleep(1.0)
             print("\a")
-        
-    # src_img = cv2.imread(
-    #     PATH_SRC_IMG,
-    #     cv2.IMREAD_COLOR
-    # )
-    # ground_truth = cv2.imread(
-    #     PATH_GT_IMG,
-    #     cv2.IMREAD_GRAYSCALE
-    # ).astype(bool)
-    # road_mask = cv2.imread(
-    #     PATH_ROAD_MASK,
-    #     cv2.IMREAD_GRAYSCALE
-    # ).astype(bool)
-    # src_img = apply_road_mask(src_img, road_mask)
     
-    # inst = BuildingDamageExtractor(src_img, ground_truth, logger=logger)
-    # inst.meanshift_and_color_thresholding()
-    # inst.edge_angle_variance_with_hpf()
-    # inst.edge_pixel_classify()
 

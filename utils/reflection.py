@@ -35,7 +35,7 @@ def get_var_name( var ):
         raise CannotFindVariable( "Cannot find variable name" )
 
 
-def get_qualified_class_name( _type ):
+def get_qualified_class_name( _type, wrap_with_quotes=True ):
     """
     オブジェクトの完全クラス名の取得
 
@@ -43,6 +43,8 @@ def get_qualified_class_name( _type ):
     ----------
     _type : type object
         取得したいオブジェクトの type オブジェクト
+    wrap_with_quotes : bool, default True
+        返り値をシングルクォートで括るかどうか
 
     Returns
     -------
@@ -56,9 +58,14 @@ def get_qualified_class_name( _type ):
     is_not_builtins = hasattr( _type, "__module__" ) and _type.__module__ != "builtins"
     
     if is_not_builtins:
-        return "'{module_name}.{class_name}'".format(
+        obj_name = "{module_name}.{class_name}".format(
             module_name=_type.__module__,
             class_name=_type.__name__
         )
     else:
-        return _type.__name__
+        obj_name = _type.__name__
+
+    if wrap_with_quotes:
+        return "'" + obj_name + "'"
+    else:
+        return obj_name
