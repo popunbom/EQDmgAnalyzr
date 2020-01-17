@@ -6,29 +6,52 @@
 
 from time import sleep
 from tqdm import trange, tqdm
-from multiprocessing import Pool, freeze_support, current_process
+from multiprocessing import Pool, current_process
 import re
 
-def progresser(n):
+from utils.pool import CustomPool
+
+
+def progresser_1(n):
     interval = 0.001 / (n + 2)
+    worker_id = current_process()._identity[0]
+    text = f"Worker #{worker_id} "
+    
     total = 5000
-    worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
-    # tqdm.write("Worker: " + str(current_process()) + ", PID: " + str(worker_id))
-    text = "#{}, est. {:<04.2}s".format(n, interval * total)
     for _ in trange(total, desc=text, position=worker_id, leave=False):
-    # for _ in range(total):
         sleep(interval)
 
-if __name__ == '__main__':
-    
-    # pool = Pool(2)
-    # for _ in tqdm.tqdm(pool.imap_unordered(progresser, range(100)), total=100):
-    #     pass
-    #
-    # pool.close()
-    # pool.join()
-    # pbar.close()
 
-    with Pool(processes=4, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)) as p:
-        for result in tqdm(p.imap_unordered(progresser, range(10)), total=10):
+def progresser_2(n):
+    worker_id = current_process()._identity[0]
+    text = f"Worker #{worker_id} "
+    
+    total = 500000
+    s = 0
+    for _ in trange(total, desc=text, position=worker_id, leave=False):
+        s += s * (s % 3)
+
+
+def proc_1():
+    cp = CustomPool()
+    
+    with cp.Pool(n_process=4, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)) as p:
+        for result in tqdm(p.imap_unordered(progresser_1, range(10)), total=10):
             pass
+    
+    cp.update()
+
+
+def proc_2():
+    cp = CustomPool()
+    
+    with cp.Pool(n_process=4, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),)) as p:
+        for result in tqdm(p.imap_unordered(progresser_2, range(10)), total=10):
+            pass
+    
+    cp.update()
+
+
+if __name__ == '__main__':
+    proc_1()
+    proc_2()
