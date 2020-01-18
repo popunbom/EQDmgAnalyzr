@@ -23,6 +23,8 @@ from utils.common import n_args, eprint
 
 import scipy.ndimage as ndi
 
+from utils.pool import CustomPool
+
 """
 imgproc/utils.py : 汎用的な画像処理
 """
@@ -140,8 +142,8 @@ def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, 
         _func = func
         
         def _callee(_imgs, _func, _width, _s_j, _w_w, _n_loop):
-            
-            _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
+    
+            _worker_id = current_process()._identity[0]
             _desc = f"Worker #{_worker_id:3d}"
             
             _results = list()
@@ -162,20 +164,23 @@ def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, 
                     for _roi in _imgs
                 ]
                 _results.append(_func(*_rois))
-            
+    
             return _results
-        
-        
-        progress_bar = tqdm(total=results_shape[0])
-        
+
+
+        progress_bar = tqdm(total=results_shape[0], position=0)
+
+
         def _update_progressbar(arg):
             progress_bar.update()
-        
-        pool = Pool(processes=n_worker, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
-        
+
+
+        cp = CustomPool()
+        pool = cp.Pool(initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
+
         results = list()
         for ii, i in enumerate(range(w_h // 2, height + w_h // 2, s_i)):
-            
+    
             rois = [
                 img[
                     get_window_rect(
@@ -197,6 +202,7 @@ def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, 
             )
         pool.close()
         pool.join()
+        cp.update()
         
         results = np.array(
             [result.get() for result in results],
