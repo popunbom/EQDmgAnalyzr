@@ -17,6 +17,7 @@ from imgproc.utils import get_window_rect, compute_by_window
 from utils.assertion import TYPE_ASSERT, NDARRAY_ASSERT, SAME_SHAPE_ASSERT
 from utils.common import eprint as _eprint
 from utils.logger import ImageLogger
+from utils.pool import CustomPool
 
 DEBUG = False
 
@@ -248,8 +249,8 @@ class EdgeLineFeatures:
             _width - _pad_width,
             fill_value=_LABELS["UNDEFINED"]
         )
-        
-        _worker_id = int(re.match(r"(.*)-([0-9]+)$", current_process().name).group(2))
+
+        _worker_id = current_process()._identity[0]
         _desc = f"Worker #{_worker_id:3d}"
         
         for _jj, _j in tqdm(
@@ -322,21 +323,24 @@ class EdgeLineFeatures:
             constant_values=BG
         )
         height, width = img.shape[:2]
-        
-        progress_bar = tqdm(total=height)
-        
+
+        progress_bar = tqdm(total=height, position=0)
+
+
         def _update_progressbar(arg):
             progress_bar.update()
-        
-        pool = Pool(processes=12, initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
-        
+
+
+        cp = CustomPool()
+        pool = cp.Pool(initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),))
+
         results = list()
-        
+
         # 全画素ループ (tqdm で進捗可視化)
         for i in trange((k_size // 2), height - (k_size // 2), desc="Height", leave=False):
-            
+    
             roi = img[i:i + k_size, :]
-            
+    
             results.append(
                 pool.apply_async(
                     self._classify_pixel,
@@ -346,6 +350,7 @@ class EdgeLineFeatures:
             )
         pool.close()
         pool.join()
+        cp.update()
         
         self.classified = np.array(
             [result.get() for result in results],
