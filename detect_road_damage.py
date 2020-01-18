@@ -5,19 +5,20 @@
 # Created by PyCharm at 2019-11-19
 # This is a part of EQDmgAnalyzr
 
+
+import platform
+
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 from os import path
 
-from skimage.morphology import skeletonize
-from skimage.filters import sobel
-
-import matplotlib.pyplot as plt
-
-from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, NDARRAY_ASSERT
+from utils.assertion import SAME_SHAPE_ASSERT, NDARRAY_ASSERT
 from utils.logger import ImageLogger
 
-plt.switch_backend("macosx")
+
+if platform.system() == "Darwin":
+    plt.switch_backend("macosx")
 
 
 def detect_road_damage_1(result, road_mask, logger=None):
