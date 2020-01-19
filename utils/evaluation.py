@@ -13,6 +13,32 @@ import numpy as np
 from utils.assertion import SAME_SHAPE_ASSERT, NDARRAY_ASSERT
 
 
+def calculate_metrics( confusion_matrix ):
+    cm = confusion_matrix
+    
+    TP, FP, FN, TN = cm["TP"], cm["FP"], cm["FN"], cm["TN"]
+    
+    metrics = {
+        "Accuracy"    : 0 if (TP + FP + FN + TN) == 0 else 100 * (TP + TN) / (TP + FP + FN + TN),
+        "Recall"      : 0 if (TP + FN) == 0 else 100 * TP / (TP + FN),
+        "Specificity" : 0 if (FP + TN) == 0 else 100 * TN / (FP + TN),
+        "Precision"   : 0 if (TP + FP) == 0 else 100 * TP / (TP + FP),
+        # 見落とし率(Missing-Rate): `FN / (TP+FN)`
+        "Missing-Rate": 0 if (TP + FN) == 0 else 100 * FN / (TP + FN),
+        # 誤り率(Wrong-Rate): `FP / (TP+FP)`
+        "Wrong-Rate"  : 0 if (TP + FP) == 0 else 100 * FP / (TP + FP),
+    }
+    
+    metrics.update(
+        {
+            "F Score": 0 if (metrics["Recall"] + metrics["Precision"]) == 0 else (2 * metrics["Recall"] * metrics[
+                "Precision"]) / (metrics["Recall"] + metrics["Precision"])
+        }
+    )
+    
+    return metrics
+
+
 def evaluation_by_confusion_matrix( result, ground_truth ):
     """
     混同行列 (Confusion-Matrix) を用いた
@@ -60,18 +86,6 @@ def evaluation_by_confusion_matrix( result, ground_truth ):
         "TP": TP, "FP": FP, "FN": FN, "TN": TN,
     }
     
-    metrics = {
-        "Accuracy"   : 0 if (TP + FP + FN + TN) == 0 else 100 * (TP + TN) / (TP + FP + FN + TN),
-        "Recall"     : 0 if (TP + FN) == 0 else 100 * TP / (TP + FN),
-        "Specificity": 0 if (FP + TN) == 0 else 100 * TN / (FP + TN),
-        "Precision"  : 0 if (TP + FP) == 0 else 100 * TP / (TP + FP),
-    }
-    
-    metrics.update(
-        {
-            "F Score": 0 if (metrics["Recall"] + metrics["Precision"]) == 0 else (2 * metrics["Recall"] * metrics[
-                "Precision"]) / (metrics["Recall"] + metrics["Precision"])
-        }
-    )
+    metrics = calculate_metrics(confusion_matrix)
     
     return confusion_matrix, metrics
