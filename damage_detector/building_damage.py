@@ -12,7 +12,7 @@ import pymeanshift
 from damage_detector.params_finder import ParamsFinder
 from imgproc.edge import EdgeProcedures
 from imgproc.edge_line_feature import EdgeLineFeatures
-from imgproc.utils import compute_by_window, zoom_to_img_size, disk_mask
+from imgproc.utils import compute_by_window, zoom_to_img_size, disk_mask, check_if_binary_image
 
 from utils.assertion import NDARRAY_ASSERT, SAME_SHAPE_ASSERT, TYPE_ASSERT
 from utils.common import eprint
@@ -138,7 +138,43 @@ class BuildingDamageExtractor:
         value = (w_n_endpoint + w_n_branch) / w_n_edges
         
         return value
+
+
+    @staticmethod
+    def _remove_tiny_area(img, threshold_area=50):
+        """
+        微小領域の削除
+        
+        Parameters
+        ----------
+        img : numpy.ndarray
+            入力画像 (8-bit 二値化画像)
+        threshold_area : int, default 50
+            面積の閾値
+        
+        Returns
+        -------
+        thresholded : numpy.ndarray
+            閾値以下の面積を持つ領域を除去した画像
+
+        """
+        
+        NDARRAY_ASSERT(img, dtype=np.uint8)
+        
+        assert check_if_binary_image(img), \
+            "argument 'img' must be binary image"
     
+        _, labels, stats, _ = cv2.connectedComponentsWithStats(img)
+    
+        areas = stats[:, cv2.CC_STAT_AREA]
+    
+        area_image = labels.copy()
+        for label_num, area in enumerate(areas):
+            area_image[area_image == label_num] = area
+    
+        thresholded = (area_image != areas[0]) & (area_image > threshold_area)
+        
+        return thresholded
     
     @staticmethod
     def calc_edge_angle_variance(img, window_size=33, step=1, logger=None):
