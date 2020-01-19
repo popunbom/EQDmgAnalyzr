@@ -17,22 +17,16 @@ import pyperclip
 
 from utils.common import eprint
 
-RESULT_ROOT_DIR = "./tmp/detect_building_damage/2020_01_09_whole_test"
+RESULT_ROOT_DIR = "./tmp/detect_building_damage/master/fixed_histogram/GT_BOTH"
 
 EXP_PREFIX = "aerial_roi"
-
-OPTIONS = [
-    "no_norm",
-    "GT_BOTH",
-]
 
 dirs = [d for d in listdir(RESULT_ROOT_DIR) if isdir(path.join(RESULT_ROOT_DIR, d))]
 
 def get_dir_name(exp_num, exp_name):
-    P = r"aerial_roi{exp_num}_[0-9]{{8}}_[0-9]{{6}}_{exp_name}_{options}".format(
+    P = r"aerial_roi{exp_num}_[0-9]{{8}}_[0-9]{{6}}_{exp_name}".format(
         exp_num=exp_num,
-        exp_name=exp_name,
-        options='_'.join(OPTIONS)
+        exp_name=exp_name
     )
     return [d for d in dirs if re.match(P, d) is not None][0]
 
@@ -69,6 +63,8 @@ def gen_result(exp_num, exp_name):
             {d['Score']['Precision']:.04f}
             {d['Score']['Recall']:.04f}
             {d['Score']['Specificity']:.04f}
+            {d['Score']['Missing-Rate']:.04f}
+            {d['Score']['Wrong-Rate']:.04f}
             {d['Score']['F Score']:.04f}
         """).lstrip('\n')
     
@@ -91,6 +87,8 @@ def gen_result(exp_num, exp_name):
             {d['Score']['Precision']:.04f}
             {d['Score']['Recall']:.04f}
             {d['Score']['Specificity']:.04f}
+            {d['Score']['Missing-Rate']:.04f}
+            {d['Score']['Wrong-Rate']:.04f}
             {d['Score']['F Score']:.04f}
         """).lstrip('\n')
     
@@ -98,8 +96,8 @@ def gen_result(exp_num, exp_name):
         d = json.load(open(dir_path / "detail_mean_shift.json"))
     
         result += dedent(f"""
-            {d['Mean-Shift']['params']['sp']}
-            {d['Mean-Shift']['params']['sr']}
+            {d['Mean-Shift']['params']['spatial_radius']}
+            {d['Mean-Shift']['params']['range_radius']}
         """).lstrip('\n')
         
         d = json.load(open(dir_path / "params_finder/color_thresholds_in_hsv.json"))
@@ -111,6 +109,8 @@ def gen_result(exp_num, exp_name):
         """).lstrip('\n')
         
         d = json.load(open(dir_path / "params_finder/params_morphology.json"))
+        
+        s = json.load(open(dir_path / "scores_fixed_result.json"))
         
         m = {
             "ERODE": "収縮",
@@ -124,11 +124,13 @@ def gen_result(exp_num, exp_name):
             {d['Params']['Kernel']['#_of_Neighbor']}近傍
             {m[d['Params']['Operation']]}
             {d['Params']['Iterations']}回
-            {d['Score']['Accuracy']:.04f}
-            {d['Score']['Precision']:.04f}
-            {d['Score']['Recall']:.04f}
-            {d['Score']['Specificity']:.04f}
-            {d['Score']['F Score']:.04f}
+            {s['Score']['Accuracy']:.04f}
+            {s['Score']['Precision']:.04f}
+            {s['Score']['Recall']:.04f}
+            {s['Score']['Specificity']:.04f}
+            {s['Score']['Missing-Rate']:.04f}
+            {s['Score']['Wrong-Rate']:.04f}
+            {s['Score']['F Score']:.04f}
         """).lstrip('\n')
         
 
@@ -153,7 +155,10 @@ if __name__ == '__main__':
 
     else:
         while True:
-            line = input("EXP NUM? > ")
+            line = input(dedent(f"""
+            ROOT_PATH: {RESULT_ROOT_DIR}
+            EXP NUM? >
+            """).rstrip("\n"))
             if line:
                 exp_num = int(line)
                 results = "\n".join([gen_result(exp_num, exp_name) for exp_name in EXP_NAMES])
