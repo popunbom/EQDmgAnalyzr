@@ -229,7 +229,7 @@ def SAME_NDIM_ASSERT( ndarray_1, ndarray_2 ):
     )
     
     if __debug__:
-        if not ndarray.ndim == ndim:
+        if not ndarray_1.ndim == ndarray_2.ndim:
             raise AssertionError( message )
 
 
