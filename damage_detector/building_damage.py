@@ -502,7 +502,51 @@ class BuildingDamageExtractor:
         
         return building_damage
     
+    def edge_angle_variance(self):
+        """
+        建物被害検出: エッジ角度分散
+
+        - 入力画像から、特徴量としてエッジ角度分散画像を生成する
+
+        - エッジ角度分散に閾値処理を行い、建物抽出結果とする
+
+        Returns
+        -------
+        building_damage : numpy.ndarray
+            被害抽出結果
+
+        Notes
+        -----
+        `building_damage`
+            - 1-Bit (bool 型) 2値画像
+            - 黒：背景、白：被害抽出結果
+        """
     
+        img = self.img_gs
+        ground_truth = self.ground_truth
+        logger = self.logger
+    
+        params_finder = ParamsFinder(logger=logger)
+    
+        # Edge Angle Variance
+        eprint("Calculate: Edge Angle Variance")
+        fd_variance = self.calc_edge_angle_variance(img, logger=logger)
+    
+        # Find Thresholds (only AngleVariance)
+        eprint("Calculate: Thresholds (AngleVar)")
+        _, building_damage = params_finder.find_threshold(
+            fd_variance,
+            ground_truth,
+            logger_suffix="angle_variance"
+        )
+    
+        # Logging
+        if logger:
+            logger.logging_img(building_damage, "building_damage")
+    
+        return building_damage
+
+
     def edge_pixel_classify(self, sigma=0.1, thresholds=(0.2, 0.5), window_size=33, step=1):
         """
         建物被害検出: エッジ画素分類
