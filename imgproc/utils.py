@@ -30,6 +30,26 @@ imgproc/utils.py : 汎用的な画像処理
 """
 
 
+def imread_with_error(file_path, flags=cv2.IMREAD_COLOR):
+    img = cv2.imread(file_path, flags)
+    
+    if img is None:
+        raise FileNotFoundError(
+            file_path
+        )
+    
+    return img
+
+
+def imwrite_with_error(file_path, img, params=None):
+    success = cv2.imwrite(file_path, img, params)
+    
+    if not success:
+        raise IOError(
+            f"Failed to write image: {file_path}"
+        )
+    
+
 def compute_by_window(imgs, func, window_size=16, step=2, dst_dtype=np.float32, n_worker=12):
     """
     画像を一部を切り取り、func 関数で行った計算結果を
