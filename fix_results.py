@@ -7,7 +7,7 @@
 
 import json
 import re
-from os import walk, listdir, path
+from os import walk, listdir, path, makedirs
 from os.path import splitext, join, exists, isdir
 from textwrap import dedent
 
@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from damage_detector.building_damage import BuildingDamageExtractor
+from imgproc.utils import imread_with_error, imwrite_with_error
 from utils.common import eprint
 from utils.evaluation import evaluation_by_confusion_matrix, calculate_metrics
 
@@ -73,7 +74,7 @@ def fix_result_format():
 
 def recalculate_scores():
     
-    RESULT_ROOT_DIR = "./tmp/detect_building_damage/master/fixed_histogram"
+    RESULT_ROOT_DIR = "./tmp/detect_building_damage/master-v2/fixed_histogram"
     
     def add_prefix(file_path, prefix, delimiter="_"):
         base_name, ext = splitext(file_path)
@@ -121,7 +122,7 @@ def recalculate_scores():
 
 def remove_tiny_areas_and_recalc_score():
 
-    RESULT_ROOT_DIR = "tmp/detect_building_damage/master/fixed_histogram"
+    RESULT_ROOT_DIR = "tmp/detect_building_damage/master-v2/fixed_histogram"
     RESULT_GROUND_TRUTH = "img/resource/ground_truth"
     
     C_RED = [0, 0, 255]
@@ -148,22 +149,21 @@ def remove_tiny_areas_and_recalc_score():
             GT_TYPE: GT_{gt_type}
         """))
         
-        result = cv2.imread(
+        result = imread_with_error(
             path.join(
                 target_dir,
                 "building_damage.tiff"
             ),
             cv2.IMREAD_UNCHANGED
         )
-        if result is None:
-            eprint("Image load error.")
         
         # Fixing Image
         result_fixed = BuildingDamageExtractor._remove_tiny_area(
             (result * 255.0).astype(np.uint8)
         )
         
-        cv2.imwrite(
+        
+        imwrite_with_error(
             path.join(
                 target_dir,
                 "building_damage_fixed.tiff"
@@ -172,8 +172,7 @@ def remove_tiny_areas_and_recalc_score():
         )
         
         # Re-calc Score
-        
-        ground_truth = cv2.imread(
+        ground_truth = imread_with_error(
             path.join(
                 RESULT_GROUND_TRUTH,
                 f"aerial_roi{experiment_num}.png"
@@ -219,6 +218,110 @@ def remove_tiny_areas_and_recalc_score():
             sort_keys=True,
             indent="\t"
         )
+
+
+def generate_scores_each_gt_type():
+    RESULT_ROOT_DIR = "tmp/detect_building_damage/master-v3/fixed_histogram/GT_BOTH"
+    RESULT_GROUND_TRUTH = "img/resource/ground_truth"
+    
+    MAP_RESULT_IMAGE = {
+        "meanshift_and_color_thresholding": "building_damage_fixed.tiff",
+        "edge_angle_variance_with_hpf": "building_damage.tiff",
+        "edge_pixel_classify": "building_damage.tiff"
+    }
+    
+    C_RED = [0, 0, 255]
+    C_ORANGE = [0, 127, 255]
+    
+    target_dirs = [
+        path.join(
+            RESULT_ROOT_DIR,
+            entry
+        )
+        for entry in listdir(RESULT_ROOT_DIR)
+        if isdir(
+            path.join(
+                RESULT_ROOT_DIR,
+                entry
+            )
+        )
+    ]
+    
+    for target_dir in target_dirs:
+        eprint(
+            f"Target: {target_dir}"
+        )
+        
+        experiment_num, method_name = re.match(
+            r".*/aerial_roi([0-9])_[0-9]{8}_[0-9]{6}_(.*)$",
+            target_dir
+        ).groups()
+        
+        eprint(dedent(f"""
+            Experiment Num: {experiment_num}
+            Method: {method_name}
+        """))
+        
+        GT = cv2.imread(
+            path.join(
+                RESULT_GROUND_TRUTH,
+                f"aerial_roi{experiment_num}.png"
+            )
+        )
+        
+        result = imread_with_error(
+            path.join(
+                target_dir,
+                MAP_RESULT_IMAGE[method_name]
+            ),
+            cv2.IMREAD_UNCHANGED
+        ).astype(bool)
+        
+        for gt_type in ["GT_BOTH", "GT_RED", "GT_ORANGE"]:
+            if gt_type == "GT_BOTH":
+                ground_truth = np.all(
+                    (GT == C_RED) | (GT == C_ORANGE),
+                    axis=2
+                )
+            elif gt_type == "GT_RED":
+                ground_truth = np.all(
+                    GT == C_RED,
+                    axis=2
+                )
+            elif gt_type == "GT_ORANGE":
+                ground_truth = np.all(
+                    GT == C_ORANGE,
+                    axis=2
+                )
+        
+            cm, scores = evaluation_by_confusion_matrix(
+                result,
+                ground_truth
+            )
+            
+            j = {
+                "Confusion Matrix": cm,
+                "Score"          : scores
+            }
+            
+            save_path = path.join(
+                target_dir,
+                "evaluation",
+                gt_type
+            )
+            
+            if not exists(save_path):
+                makedirs(save_path)
+            
+            json.dump(
+                j,
+                open(path.join(save_path, "scores.json"), "w"),
+                ensure_ascii=False,
+                sort_keys=True,
+                indent="\t"
+            )
+        
         
 if __name__ == '__main__':
-    remove_tiny_areas_and_recalc_score()
+    recalculate_scores()
+    # remove_tiny_areas_and_recalc_score()

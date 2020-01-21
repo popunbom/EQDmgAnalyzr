@@ -17,7 +17,7 @@ import pyperclip
 
 from utils.common import eprint
 
-RESULT_ROOT_DIR = "./tmp/detect_building_damage/master/fixed_histogram/GT_BOTH"
+RESULT_ROOT_DIR = "./tmp/detect_building_damage/master-v2/fixed_histogram/GT_ORANGE"
 
 EXP_PREFIX = "aerial_roi"
 
@@ -59,6 +59,27 @@ def gen_result(exp_num, exp_name):
         result += dedent(f"""
             [{d['Range']['img_a'][0]:.4f}, {d['Range']['img_a'][1]:.4f}]
             [{d['Range']['img_b'][0]:.4f}, {d['Range']['img_b'][1]:.4f}]
+            {d['Score']['Accuracy']:.04f}
+            {d['Score']['Precision']:.04f}
+            {d['Score']['Recall']:.04f}
+            {d['Score']['Specificity']:.04f}
+            {d['Score']['Missing-Rate']:.04f}
+            {d['Score']['Wrong-Rate']:.04f}
+            {d['Score']['F Score']:.04f}
+        """).lstrip('\n')
+    
+    elif exp_name == "edge_angle_variance":
+        d = json.load(open(dir_path / "edge_angle_variance/params.json"))
+        
+        result += dedent(f"""
+            {d['window_proc']['window_size']}
+            {d['window_proc']['step']}
+        """).lstrip('\n')
+        
+        d = json.load(open(dir_path / "params_finder_angle_variance/params.json"))
+        
+        result += dedent(f"""
+            [{d['Range'][0]:.4f}, {d['Range'][1]:.4f}]
             {d['Score']['Accuracy']:.04f}
             {d['Score']['Precision']:.04f}
             {d['Score']['Recall']:.04f}
@@ -140,6 +161,7 @@ def gen_result(exp_num, exp_name):
 if __name__ == '__main__':
     EXP_NAMES = [
         "edge_angle_variance_with_hpf",
+        "edge_angle_variance",
         "edge_pixel_classify",
         "meanshift_and_color_thresholding"
     ]

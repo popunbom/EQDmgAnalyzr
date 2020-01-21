@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from matplotlib import cm
 
+from imgproc.utils import imread_with_error
 from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, SAME_NDIM_ASSERT, NDARRAY_ASSERT
 from utils.common import eprint
 
@@ -27,7 +28,7 @@ C_WHITE = [255, 255, 255]
 
 CONT = 0.3
 
-ROOT_DIR_RESULT = "./tmp/detect_building_damage/master/fixed_histogram"
+ROOT_DIR_RESULT = "./tmp/detect_building_damage/master-v2/fixed_histogram"
 ROOT_DIR_GT = "./img/resource/ground_truth"
 ROOT_DIR_SRC = "./img/resource/aerial_image/fixed_histogram"
 
@@ -83,20 +84,10 @@ def merge_arrays_by_mask(array_1, array_2, mask):
     array_2[mask == False] = Z
     
     return array_1 + array_2
-    
-
-def imread_with_error(file_name, flags=cv2.IMREAD_COLOR):
-    img = cv2.imread(file_name, flags)
-    
-    if img is None:
-        raise FileNotFoundError(
-            file_name
-        )
-    
-    return img
 
 
-def write_images(root_path, filenames_and_images):
+
+def write_images(root_path, filenames_and_images, prefix="study"):
     
     for file_name, img in filenames_and_images:
         base_name = splitext(file_name)[0]
@@ -106,7 +97,10 @@ def write_images(root_path, filenames_and_images):
         
         save_path = join(
             root_path,
-            base_name + ext
+            "_".join([
+                prefix,
+                base_name + ext
+            ])
         )
         
         result = cv2.imwrite(
@@ -124,240 +118,339 @@ def write_images(root_path, filenames_and_images):
             )
     
 
-result_dirs = sum([
-    [
-        join(
-            ROOT_DIR_RESULT,
-            gt_type,
-            d
-        )
-        for d in listdir(
-            join(
-                ROOT_DIR_RESULT,
-                gt_type
-            )
-        )
-        if isdir(
+if __name__ == '__main__':
+    result_dirs = sum([
+        [
             join(
                 ROOT_DIR_RESULT,
                 gt_type,
                 d
             )
-        )
-    ]
-    for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]
-], [])
-
-result_dirs = sorted(result_dirs)
-pprint(result_dirs[1:2])
-
-for result_dir in result_dirs[1:2]:
-    gt_type, experiment_num = re.match(
-        r".*/GT_(.*)/aerial_roi([0-9]).*",
-        result_dir
-    ).groups()
-
-    eprint(dedent(f"""
-        Experiment Num: {experiment_num}
-        GT_TYPE: GT_{gt_type}
-    """))
-
-    # Load: ground_truth
-    ground_truth = imread_with_error(
-        join(
-            ROOT_DIR_GT,
-            f"aerial_roi{experiment_num}.png"
-        )
-    )
+            for d in listdir(
+                join(
+                    ROOT_DIR_RESULT,
+                    gt_type
+                )
+            )
+            if isdir(
+                join(
+                    ROOT_DIR_RESULT,
+                    gt_type,
+                    d
+                )
+            )
+        ]
+        for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]
+    ], [])
     
-    # Load: source
-    src = imread_with_error(
-        join(
-            ROOT_DIR_SRC,
-            f"aerial_roi{experiment_num}.png"
-        )
-    )
-    src_gs = cv2.cvtColor(
-        cv2.cvtColor(
-            src,
-            cv2.COLOR_BGR2GRAY
-        ),
-        cv2.COLOR_GRAY2BGR
-    )
-
-    if gt_type == "BOTH":
-        ground_truth = np.all(
-            (ground_truth == C_RED) | (ground_truth == C_ORANGE),
-            axis=2
-        )
-    elif gt_type == "RED":
-        ground_truth = np.all(
-            ground_truth == C_RED,
-            axis=2
-        )
-    elif gt_type == "ORANGE":
-        ground_truth = np.all(
-            ground_truth == C_ORANGE,
-            axis=2
-        )
+    result_dirs = sorted(result_dirs)
+    pprint(result_dirs[1:2])
     
-    ground_truth = (ground_truth * 255).astype(np.uint8)
+    for result_dir in result_dirs:
+        
+        gt_type, experiment_num = re.match(
+            r".*/GT_(.*)/aerial_roi([0-9]).*",
+            result_dir
+        ).groups()
     
-    Z = np.zeros(
-        ground_truth.shape[:2],
-        dtype=np.uint8
-    )
-
-    if "meanshift_and_color_thresholding" in result_dir:
-        result = (imread_with_error(
+        eprint(dedent(f"""
+            Experiment Num: {experiment_num}
+            GT_TYPE: GT_{gt_type}
+        """))
+    
+        # Load: ground_truth
+        ground_truth = imread_with_error(
             join(
-                result_dir,
-                "building_damage_fixed.tiff"
-            ),
-            cv2.IMREAD_UNCHANGED
-        ) * 255).astype(np.uint8)
-        
-        confusion_matrix = np.dstack(
-            [result, ground_truth, result]
+                ROOT_DIR_GT,
+                f"aerial_roi{experiment_num}.png"
+            )
         )
         
-        missing = confusion_matrix.copy()
-        missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
-        
-        wrong = confusion_matrix.copy()
-        wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
-        
-        # Extract
-        missing_extracted = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            src,
-            np.all(missing == C_GREEN, axis=2)
-        )
-        missing_extracted_with_color = hsv_blending(
-            src_gs,
-            missing
-        )
-        wrong_extracted = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            src,
-            np.all(wrong == C_MAGENTA, axis=2)
-        )
-        wrong_extracted_with_color = hsv_blending(
-            src_gs,
-            wrong
-        )
-        
-        
-        write_images(
-            result_dir,
-            [
-                ("confusion_matrix", confusion_matrix),
-                ("missing", missing),
-                ("wrong", wrong),
-                ("missing_extracted", missing_extracted),
-                ("missing_extracted_with_color", missing_extracted_with_color),
-                ("wrong_extracted", wrong_extracted),
-                ("wrong_extracted_with_color", wrong_extracted_with_color)
-            ]
-        )
-        
-    
-    elif "edge_angle_variance_with_hpf" in result_dir:
-        result = (imread_with_error(
+        # Load: source
+        src = imread_with_error(
             join(
-                result_dir,
-                "building_damage.tiff"
+                ROOT_DIR_SRC,
+                f"aerial_roi{experiment_num}.png"
+            )
+        )
+        src_gs = cv2.cvtColor(
+            cv2.cvtColor(
+                src,
+                cv2.COLOR_BGR2GRAY
             ),
-            cv2.IMREAD_UNCHANGED
-        ) * 255).astype(np.uint8)
-
-        fd_angle_var = imread_with_error(
-            join(
+            cv2.COLOR_GRAY2BGR
+        )
+    
+        if gt_type == "BOTH":
+            ground_truth = np.all(
+                (ground_truth == C_RED) | (ground_truth == C_ORANGE),
+                axis=2
+            )
+        elif gt_type == "RED":
+            ground_truth = np.all(
+                ground_truth == C_RED,
+                axis=2
+            )
+        elif gt_type == "ORANGE":
+            ground_truth = np.all(
+                ground_truth == C_ORANGE,
+                axis=2
+            )
+        
+        ground_truth = (ground_truth * 255).astype(np.uint8)
+        
+        Z = np.zeros(
+            ground_truth.shape[:2],
+            dtype=np.uint8
+        )
+    
+        if "meanshift_and_color_thresholding" in result_dir:
+            result = (imread_with_error(
+                join(
+                    result_dir,
+                    "building_damage_fixed.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            ) * 255).astype(np.uint8)
+            
+            confusion_matrix = np.dstack(
+                [result, ground_truth, result]
+            )
+            
+            missing = confusion_matrix.copy()
+            missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
+            
+            wrong = confusion_matrix.copy()
+            wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
+            
+            # Extract
+            missing_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            missing_extracted_with_color = hsv_blending(
+                src_gs,
+                missing
+            )
+            wrong_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+            wrong_extracted_with_color = hsv_blending(
+                src_gs,
+                wrong
+            )
+            
+            
+            write_images(
                 result_dir,
-                "edge_angle_variance/angle_variance.png"
-            ),
-        )
+                [
+                    ("confusion_matrix", confusion_matrix),
+                    ("missing", missing),
+                    ("wrong", wrong),
+                    ("missing_extracted", missing_extracted),
+                    ("missing_extracted_with_color", missing_extracted_with_color),
+                    ("wrong_extracted", wrong_extracted),
+                    ("wrong_extracted_with_color", wrong_extracted_with_color)
+                ]
+            )
+            
         
-        fd_hpf = imread_with_error(
-            join(
+        elif "edge_angle_variance_with_hpf" in result_dir:
+            result = (imread_with_error(
+                join(
+                    result_dir,
+                    "building_damage.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            ) * 255).astype(np.uint8)
+
+            fd_angle_var = imread_with_error(
+                join(
+                    result_dir,
+                    "edge_angle_variance/angle_variance.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            )
+            fd_angle_var = (cm.get_cmap("jet")(
+                fd_angle_var / fd_angle_var.max()
+            ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+            
+            fd_hpf = imread_with_error(
+                join(
+                    result_dir,
+                    "high_pass_filter/HPF_gray.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            )
+            fd_hpf = (cm.get_cmap("jet")(
+                fd_hpf / fd_hpf.max()
+            ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+            
+            # Generate Image of Confusion Matrix
+            confusion_matrix = np.dstack(
+                [result, ground_truth, result]
+            )
+        
+            missing = confusion_matrix.copy()
+            missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
+        
+            wrong = confusion_matrix.copy()
+            wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
+            
+            # Overlay
+            fd_overlay_angle_var = hsv_blending(
+                src_gs,
+                fd_angle_var
+            )
+            fd_overlay_hpf = hsv_blending(
+                src_gs,
+                fd_hpf
+            )
+        
+            # Extract
+            missing_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            missing_extracted_with_color = hsv_blending(
+                src_gs,
+                missing
+            )
+            missing_extracted_by_anglevar = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd_angle_var,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            missing_extracted_by_hpf = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd_hpf,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            wrong_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+            wrong_extracted_with_color = hsv_blending(
+                src_gs,
+                wrong
+            )
+            wrong_extracted_by_anglevar = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd_angle_var,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+            wrong_extracted_by_hpf = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd_hpf,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+            
+        
+            write_images(
                 result_dir,
-                "high_pass_filter/HPF_gray.tiff"
-            ),
-            cv2.IMREAD_UNCHANGED
-        )
-        fd_hpf = (cm.get_cmap("jet")(
-            fd_hpf / fd_hpf.max()
-        ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
-        
-        # Generate Image of Confusion Matrix
-        confusion_matrix = np.dstack(
-            [result, ground_truth, result]
-        )
+                [
+                    ("fd_overlay_angle_var", fd_overlay_angle_var),
+                    ("fd_overlay_hpf", fd_overlay_hpf),
+                    ("confusion_matrix", confusion_matrix),
+                    ("missing", missing),
+                    ("wrong", wrong),
+                    ("missing_extracted", missing_extracted),
+                    ("missing_extracted_with_color", missing_extracted_with_color),
+                    ("missing_extracted_by_anglevar", missing_extracted_by_anglevar),
+                    ("missing_extracted_by_hpf", missing_extracted_by_hpf),
+                    ("wrong_extracted", wrong_extracted),
+                    ("wrong_extracted_with_color", wrong_extracted_with_color),
+                    ("wrong_extracted_by_anglevar", wrong_extracted_by_anglevar),
+                    ("wrong_extracted_by_hpf", wrong_extracted_by_hpf)
+                ]
+            )
     
-        missing = confusion_matrix.copy()
-        missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
     
-        wrong = confusion_matrix.copy()
-        wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
+        elif "edge_pixel_classify" in result_dir:
+            result = (imread_with_error(
+                join(
+                    result_dir,
+                    "building_damage.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            ) * 255).astype(np.uint8)
     
-        # Extract
-        missing_extracted = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            src,
-            np.all(missing == C_GREEN, axis=2)
-        )
-        missing_extracted_with_color = hsv_blending(
-            src_gs,
-            missing
-        )
-        missing_extracted_by_anglevar = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            fd_angle_var,
-            np.all(missing == C_GREEN, axis=2)
-        )
-        missing_extracted_by_hpf = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            fd_hpf,
-            np.all(missing == C_GREEN, axis=2)
-        )
-        wrong_extracted = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            src,
-            np.all(wrong == C_MAGENTA, axis=2)
-        )
-        wrong_extracted_with_color = hsv_blending(
-            src_gs,
-            wrong
-        )
-        wrong_extracted_by_anglevar = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            fd_angle_var,
-            np.all(wrong == C_MAGENTA, axis=2)
-        )
-        wrong_extracted_by_hpf = merge_arrays_by_mask(
-            (src_gs * CONT).astype(np.uint8),
-            fd_hpf,
-            np.all(wrong == C_MAGENTA, axis=2)
-        )
-        
+            fd = imread_with_error(
+                join(
+                    result_dir,
+                    "features.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            )
+            fd = (cm.get_cmap("jet")(
+                fd / fd.max()
+            ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+            
+            # Overlay
+            fd_overlay = hsv_blending(
+                src_gs,
+                fd
+            )
     
-        write_images(
-            result_dir,
-            [
-                ("confusion_matrix", confusion_matrix),
-                ("missing", missing),
-                ("wrong", wrong),
-                ("missing_extracted", missing_extracted),
-                ("missing_extracted_with_color", missing_extracted_with_color),
-                ("missing_extracted_by_anglevar", missing_extracted_by_anglevar),
-                ("missing_extracted_by_hpf", missing_extracted_by_hpf),
-                ("wrong_extracted", wrong_extracted),
-                ("wrong_extracted_with_color", wrong_extracted_with_color),
-                ("wrong_extracted_by_anglevar", wrong_extracted_by_anglevar),
-                ("wrong_extracted_by_hpf", wrong_extracted_by_hpf)
-            ]
-        )
-
-
-    elif "edge_pixel_classify" in result_dir:
-        pass
+            # Generate Image of Confusion Matrix
+            confusion_matrix = np.dstack(
+                [result, ground_truth, result]
+            )
+    
+            missing = confusion_matrix.copy()
+            missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
+    
+            wrong = confusion_matrix.copy()
+            wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
+    
+            # Extract
+            missing_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            missing_extracted_with_color = hsv_blending(
+                src_gs,
+                missing
+            )
+            missing_extracted_by_fd = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd,
+                np.all(missing == C_GREEN, axis=2)
+            )
+            wrong_extracted = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                src,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+            wrong_extracted_with_color = hsv_blending(
+                src_gs,
+                wrong
+            )
+            wrong_extracted_by_fd = merge_arrays_by_mask(
+                (src_gs * CONT).astype(np.uint8),
+                fd,
+                np.all(wrong == C_MAGENTA, axis=2)
+            )
+    
+    
+            write_images(
+                result_dir,
+                [
+                    ("fd_overlay", fd_overlay),
+                    ("confusion_matrix", confusion_matrix),
+                    ("missing", missing),
+                    ("wrong", wrong),
+                    ("missing_extracted", missing_extracted),
+                    ("missing_extracted_with_color", missing_extracted_with_color),
+                    ("missing_extracted_by_fd", missing_extracted_by_fd),
+                    ("wrong_extracted", wrong_extracted),
+                    ("wrong_extracted_with_color", wrong_extracted_with_color),
+                    ("wrong_extracted_by_fd", wrong_extracted_by_fd)
+                ]
+            )
