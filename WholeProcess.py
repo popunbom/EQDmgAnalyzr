@@ -1,11 +1,10 @@
-import os
 import cv2
-import numpy as np
-import CommonProcedures
 import EdgeProfiler
-import MaskLabeling
 import SaveResultAsImage
 import FeatureAnalyzer
+from imgproc.labeling import labeling_from_mask
+from imgproc.preproc import denoise_by_median_and_meanshift
+from imgproc.utils import divide_by_mask
 
 features = ['length', 'endpoints', 'branches', 'passings']
 
@@ -29,17 +28,17 @@ if __name__ == '__main__':
   img_mask = cv2.imread(path_img_mask, cv2.IMREAD_GRAYSCALE)
   
   # Get Mask Data
-  npy_label = MaskLabeling.getMaskLabel( img_mask )
+  npy_label = labeling_from_mask( img_mask )
   
   ########################
   # IMAGE PRE-PROCESSING #
   ########################
-  img = CommonProcedures.imgPreProc( img_src )
+  img = denoise_by_median_and_meanshift( img_src )
   
   ########################
   #### IMAGE DIVISION ####
   ########################
-  n_of_imgs = CommonProcedures.imageDivideByMask(img, npy_label, target_name)
+  n_of_imgs = divide_by_mask( img, npy_label, target_name )
   
   #########################
   ## CALC EDGE FEATURES  ##

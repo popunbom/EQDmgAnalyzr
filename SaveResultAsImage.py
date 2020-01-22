@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import EdgeProfiler as ep
-import MaskLabeling as ml
+from imgproc.labeling import labeling_from_mask
 
 
 def getMagnitudeColor( strength ):
@@ -115,8 +115,8 @@ def saveEdgeFeatureAsImage( src_img, mask_img, npy_features, feat_name, SHOW_LOG
     " 'src_img' must be 1-ch Grayscale image"
   
   # NPY Data Load
-  npy_label = ml.getMaskLabel( mask_img )
-  
+  npy_label = labeling_from_mask( mask_img )
+
   if SHOW_LOG:
     print( "  feat: %s" % feat_name, flush=True )
   
@@ -154,7 +154,7 @@ def clasify( src_img, mask_img, npy_features, npy_thresholds, SHOW_LOG, SHOW_IMG
   features = ['length', 'endpoints', 'branches', 'passings']
   
   # NPY Data Load
-  npy_label = ml.getMaskLabel( mask_img )
+  npy_label = labeling_from_mask( mask_img )
   
   roi_category = { }
   
@@ -231,8 +231,8 @@ def clasify( src_img, mask_img, npy_features, npy_thresholds, SHOW_LOG, SHOW_IMG
 def makeAnswerImg( mask_img, answer_img, thresh_low=0.20, thresh_high=0.80 ):
   assert (len( answer_img.shape ) == 3), "answer_img must be 3-ch color image."
   assert (thresh_low < thresh_high), "thresh_low must be lower than thresh_high"
-  
-  npy_label = ml.getMaskLabel( mask_img )
+
+  npy_label = labeling_from_mask( mask_img )
   R = np.array( [0, 0, 255], dtype=np.uint8 )
   
   npy_result = []
