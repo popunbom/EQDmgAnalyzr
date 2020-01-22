@@ -395,3 +395,14 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.gitignore.io/api/vim,linux,macos,emacs,python,opencv,pycharm,windows,virtualenv,jupyternotebooks,visualstudiocode
+
+### Sphinx ###
+/docs/build
+/docs/source/*
+!/docs/source/conf.py
+!/docs/source/index.rst
+!/docs/source/_static
+!/docs/source/_templates
+!/docs/Makefile
+!/docs/make.bat
+!/docs/README.md
