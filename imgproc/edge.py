@@ -114,20 +114,25 @@ class EdgeProcedures(object):
         平均ベクトルに基づくエッジ角度分散の計算
             *REF: [\[PDF\] 角度統計](http://q-bio.jp/images/5/53/角度統計配布_qbio4th.pdf)*
         
-        - $N$ : 計算対象の角度の個数
-        - まず、$\cos$、$\sin$ の平均値を計算する
-            - それぞれを $M_{\cos}$、$M_{\sin}$ とすると
-            $$ M_{\cos} = \frac{1}{N} \sum^{N} \cos{\theta} \;, \;\; M_{\sin} = \frac{1}{N} \sum^{N} \sin{\theta} $$
+        - :math:`N` : 計算対象の角度の個数
+        - まず、:math:`\\cos`、:math:`\\sin` の平均値を計算する
+            - それぞれを :math:`M_{\\cos}`、:math:`M_{\\sin}` とすると
+        
+        .. math::
+            M_{\\cos} = \\frac{1}{N} \\sum^{N} \\cos{\\theta} \\;, \\;\\; M_{\\sin} = \\frac{1}{N} \\sum^{N} \\sin{\\theta} $$
             
         - ここで、平均ベクトルを考える
-            - 平均ベクトル $(R\cos{\Theta}, R\sin{\Theta})$ は次のように定義される
-                - $R$: ベクトルの長さ
-            $$ (R\cos{\Theta}, R\sin{\Theta}) = (M_{\cos}, M_{\sin}) $$
+            - 平均ベクトル :math:`(R\\cos{\\Theta}, R\\sin{\\Theta})` は次のように定義される
+                - :math:`R`: ベクトルの長さ
         
-        - このとき、エッジ角度分散 $V$ は平均ベクトルの長さ $R$ を用いて次のように定義される
-            $$ V = 1 - R $$
-            - $R$ は以下の計算で算出する
-            $$ R = \sqrt{ {M_{\cos}}^2 + {M_{\sin}}^2 } $$
+        .. math::
+            (R\\cos{\\Theta}, R\\sin{\\Theta}) = (M_{\\cos}, M_{\\sin})
+
+        - このとき、エッジ角度分散 :math:`V` は平均ベクトルの長さ :math:`R` を用いて次のように定義される
+        
+        .. math::
+            V = 1 - \\sqrt{ {M_{\\cos}}^2 + {M_{\\sin}}^2 }
+        
         Parameters
         ----------
         _edge_magnitude : numpy.ndarray
