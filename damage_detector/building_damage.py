@@ -341,7 +341,8 @@ class BuildingDamageExtractor:
     def meanshift_and_color_thresholding(self,
                                          func_mean_shift=cv2.pyrMeanShiftFiltering,
                                          params_mean_shift={ "sp": 40, "sr": 50 },
-                                         retval_pos=None
+                                         retval_pos=None,
+                                         skip_find_params=False
                                          ):
         """
         建物被害検出: Mean-Shift による減色処理と色閾値処理
@@ -428,28 +429,31 @@ class BuildingDamageExtractor:
                 "detail_mean_shift"
             )
         
-        params_finder = ParamsFinder(logger=logger)
+        if not skip_find_params:
+            params_finder = ParamsFinder(logger=logger)
+            
+            # Find: Color thresholds in HSV
+            _, result = params_finder.find_color_threshold_in_hsv(
+                img=smoothed,
+                ground_truth=ground_truth,
+            )
+            
+            # Find: Morphology processing
+            _, building_damage = params_finder.find_reasonable_morphology(
+                result_img=result,
+                ground_truth=ground_truth,
+            )
+            
+            # Logging
+            if logger:
+                logger.logging_img(building_damage, "building_damage")
         
-        # Find: Color thresholds in HSV
-        _, result = params_finder.find_color_threshold_in_hsv(
-            img=smoothed,
-            ground_truth=ground_truth,
-        )
+            return building_damage
         
-        # Find: Morphology processing
-        _, building_damage = params_finder.find_reasonable_morphology(
-            result_img=result,
-            ground_truth=ground_truth,
-        )
-        
-        # Logging
-        if logger:
-            logger.logging_img(building_damage, "building_damage")
-        
-        return building_damage
+        return smoothed
     
     
-    def edge_angle_variance_with_hpf(self):
+    def edge_angle_variance_with_hpf(self, window_size=33, step=1, skip_find_params=False):
         """
         建物被害検出: エッジ角度分散＋ハイパスフィルタ
 
@@ -481,28 +485,31 @@ class BuildingDamageExtractor:
         
         # Edge Angle Variance
         eprint("Calculate: Edge Angle Variance")
-        fd_variance = self.calc_edge_angle_variance(img, logger=logger)
+        fd_variance = self.calc_edge_angle_variance(img, window_size, step, logger=logger)
         
         # High-Pass Filter
         eprint("Calculate: High-Pass Filter")
-        fd_hpf = self.high_pass_filter(img, logger=logger)
+        fd_hpf = self.high_pass_filter(img, window_size, step, logger=logger)
         
-        # TODO: 各結果画像の閾値処理をどうする？
-        # Find Thresholds (only AngleVariance)
-        eprint("Calculate: Thresholds (AngleVar)")
-        params_finder.find_threshold(fd_variance, ground_truth, logger_suffix="angle_variance")
+        if not skip_find_params:
+            # TODO: 各結果画像の閾値処理をどうする？
+            # Find Thresholds (only AngleVariance)
+            eprint("Calculate: Thresholds (AngleVar)")
+            params_finder.find_threshold(fd_variance, ground_truth, logger_suffix="angle_variance")
+            
+            # Find Thresholds (Combination of AngleVariance and HPF)
+            eprint("Calculate: Thresholds (AngleVar - HPF)")
+            _, building_damage = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
+            
+            # Logging
+            if logger:
+                logger.logging_img(building_damage, "building_damage")
+            
+            return building_damage
         
-        # Find Thresholds (Combination of AngleVariance and HPF)
-        eprint("Calculate: Thresholds (AngleVar - HPF)")
-        _, building_damage = params_finder.find_subtracted_thresholds(fd_variance, fd_hpf, ground_truth)
+        return fd_variance, fd_hpf
         
-        # Logging
-        if logger:
-            logger.logging_img(building_damage, "building_damage")
-        
-        return building_damage
-    
-    def edge_angle_variance(self):
+    def edge_angle_variance(self, window_size=33, step=1, skip_find_params=False):
         """
         建物被害検出: エッジ角度分散
 
@@ -526,28 +533,31 @@ class BuildingDamageExtractor:
         ground_truth = self.ground_truth
         logger = self.logger
     
-        params_finder = ParamsFinder(logger=logger)
-    
         # Edge Angle Variance
         eprint("Calculate: Edge Angle Variance")
-        fd_variance = self.calc_edge_angle_variance(img, logger=logger)
+        fd_variance = self.calc_edge_angle_variance(img, window_size, step, logger=logger)
+        
+        if not skip_find_params:
+            params_finder = ParamsFinder(logger=logger)
     
-        # Find Thresholds (only AngleVariance)
-        eprint("Calculate: Thresholds (AngleVar)")
-        _, building_damage = params_finder.find_threshold(
-            fd_variance,
-            ground_truth,
-            logger_suffix="angle_variance"
-        )
-    
-        # Logging
-        if logger:
-            logger.logging_img(building_damage, "building_damage")
-    
-        return building_damage
+            # Find Thresholds (only AngleVariance)
+            eprint("Calculate: Thresholds (AngleVar)")
+            _, building_damage = params_finder.find_threshold(
+                fd_variance,
+                ground_truth,
+                logger_suffix="angle_variance"
+            )
+        
+            # Logging
+            if logger:
+                logger.logging_img(building_damage, "building_damage")
+        
+            return building_damage
+        
+        return fd_variance
 
 
-    def edge_pixel_classify(self, sigma=0.1, thresholds=(0.2, 0.5), window_size=33, step=1):
+    def edge_pixel_classify(self, sigma=0.1, thresholds=(0.2, 0.5), window_size=33, step=1, skip_find_params=False):
         """
         建物被害検出: エッジ画素分類
 
@@ -628,21 +638,25 @@ class BuildingDamageExtractor:
             
             logger.logging_dict(params, "params")
         
-        params_finder = ParamsFinder(logger=logger)
+        if not skip_find_params:
         
-        # Find thresholds
-        _, building_damage = params_finder.find_threshold(
-            features,
-            ground_truth,
-            logger_suffix="edge_line_feature"
-        )
+            params_finder = ParamsFinder(logger=logger)
+            
+            # Find thresholds
+            _, building_damage = params_finder.find_threshold(
+                features,
+                ground_truth,
+                logger_suffix="edge_line_feature"
+            )
+            
+            # Logging
+            if logger:
+                logger.logging_img(building_damage, "building_damage")
+            
+            return building_damage
         
-        # Logging
-        if logger:
-            logger.logging_img(building_damage, "building_damage")
-        
-        return building_damage
-    
+        return features
+
     
     def __init__(self, img, ground_truth, logger=None) -> None:
         """
