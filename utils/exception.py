@@ -3,6 +3,7 @@
 
 # Author: popunbom <fantom0779@gmail.com>
 # Created At: 2019/08/29
+from textwrap import dedent
 
 
 class CannotFindVariable( Exception ):
@@ -31,9 +32,16 @@ class UnsupportedDataType( Exception ):
 
 class UnsupportedOption( Exception ):
 
-    def __init__( self, detail: str, **kwargs ) -> None:
-        message = "Option is not supported ({detail})".format(
-            detail=detail
+    def __init__(self, detail: str, available_options=None, **kwargs) -> None:
+        message = dedent("""
+        Option is not supported ({detail})
+          Available Options: {options}
+        """)
+        message = "".format(
+            detail=detail,
+            options="None" if available_options is None else ", ".join(
+                [str(x) for x in available_options]
+            )
         )
         super().__init__( message )
         self.kwargs = kwargs
