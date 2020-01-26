@@ -18,6 +18,8 @@ from imgproc.utils import imread_with_error
 from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, SAME_NDIM_ASSERT, NDARRAY_ASSERT
 from utils.common import eprint
 
+from imgproc import overlay
+
 C_RED = [0, 0, 255]
 C_ORANGE = [0, 127, 255]
 
@@ -31,7 +33,6 @@ CONT = 0.3
 ROOT_DIR_RESULT = "./tmp/detect_building_damage/master-v2/fixed_histogram"
 ROOT_DIR_GT = "./img/resource/ground_truth"
 ROOT_DIR_SRC = "./img/resource/aerial_image/fixed_histogram"
-
 
 def hsv_blending(bg_img, fg_img):
     NDARRAY_ASSERT(fg_img, ndim=3)
@@ -140,7 +141,8 @@ if __name__ == '__main__':
                 )
             )
         ]
-        for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]
+        # for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]
+        for gt_type in ["GT_BOTH"]
     ], [])
     
     result_dirs = sorted(result_dirs)
@@ -305,10 +307,16 @@ if __name__ == '__main__':
                 src_gs,
                 fd_angle_var
             )
+            # fd_overlay_angle_var = overlay.do_gimp_overlay(
+            #     src_gs, fd_angle_var, overlay.FUNC_GRAIN_MERGE
+            # )
             fd_overlay_hpf = hsv_blending(
                 src_gs,
                 fd_hpf
             )
+            # fd_overlay_hpf = overlay.do_gimp_overlay(
+            #     src_gs, fd_hpf, overlay.FUNC_GRAIN_MERGE
+            # )
         
             # Extract
             missing_extracted = merge_arrays_by_mask(
@@ -369,7 +377,93 @@ if __name__ == '__main__':
                     ("wrong_extracted_by_hpf", wrong_extracted_by_hpf)
                 ]
             )
+            
+        elif "edge_angle_variance" in result_dir:
+                result = (imread_with_error(
+                    join(
+                        result_dir,
+                        "building_damage.tiff"
+                    ),
+                    cv2.IMREAD_UNCHANGED
+                ) * 255).astype(np.uint8)
     
+                fd_angle_var = imread_with_error(
+                    join(
+                        result_dir,
+                        "edge_angle_variance/angle_variance.tiff"
+                    ),
+                    cv2.IMREAD_UNCHANGED
+                )
+                fd_angle_var = (cm.get_cmap("jet")(
+                    fd_angle_var / fd_angle_var.max()
+                ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+                
+                # Generate Image of Confusion Matrix
+                confusion_matrix = np.dstack(
+                    [result, ground_truth, result]
+                )
+            
+                missing = confusion_matrix.copy()
+                missing[~np.all(missing == C_GREEN, axis=2)] = [0, 0, 0]
+            
+                wrong = confusion_matrix.copy()
+                wrong[~np.all(wrong == C_MAGENTA, axis=2)] = [0, 0, 0]
+                
+                # Overlay
+                fd_overlay_angle_var = hsv_blending(
+                    src_gs,
+                    fd_angle_var
+                )
+                # fd_overlay_angle_var = overlay.do_gimp_overlay(
+                #     src_gs, fd_angle_var, overlay.FUNC_GRAIN_MERGE
+                # )
+            
+                # Extract
+                missing_extracted = merge_arrays_by_mask(
+                    (src_gs * CONT).astype(np.uint8),
+                    src,
+                    np.all(missing == C_GREEN, axis=2)
+                )
+                missing_extracted_with_color = hsv_blending(
+                    src_gs,
+                    missing
+                )
+                missing_extracted_by_anglevar = merge_arrays_by_mask(
+                    (src_gs * CONT).astype(np.uint8),
+                    fd_angle_var,
+                    np.all(missing == C_GREEN, axis=2)
+                )
+                wrong_extracted = merge_arrays_by_mask(
+                    (src_gs * CONT).astype(np.uint8),
+                    src,
+                    np.all(wrong == C_MAGENTA, axis=2)
+                )
+                wrong_extracted_with_color = hsv_blending(
+                    src_gs,
+                    wrong
+                )
+                wrong_extracted_by_anglevar = merge_arrays_by_mask(
+                    (src_gs * CONT).astype(np.uint8),
+                    fd_angle_var,
+                    np.all(wrong == C_MAGENTA, axis=2)
+                )
+            
+                write_images(
+                    result_dir,
+                    [
+                        ("fd_overlay_angle_var", fd_overlay_angle_var),
+                        ("confusion_matrix", confusion_matrix),
+                        ("missing", missing),
+                        ("wrong", wrong),
+                        ("missing_extracted", missing_extracted),
+                        ("missing_extracted_with_color", missing_extracted_with_color),
+                        ("missing_extracted_by_anglevar", missing_extracted_by_anglevar),
+                        ("wrong_extracted", wrong_extracted),
+                        ("wrong_extracted_with_color", wrong_extracted_with_color),
+                        ("wrong_extracted_by_anglevar", wrong_extracted_by_anglevar)
+                    ]
+                )
+        
     
         elif "edge_pixel_classify" in result_dir:
             result = (imread_with_error(
@@ -396,6 +490,9 @@ if __name__ == '__main__':
                 src_gs,
                 fd
             )
+            # fd_overlay = overlay.do_gimp_overlay(
+            #     src_gs, fd, overlay.FUNC_GRAIN_MERGE
+            # )
     
             # Generate Image of Confusion Matrix
             confusion_matrix = np.dstack(
