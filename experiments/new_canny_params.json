@@ -1,0 +1,28 @@
+{
+  "resource_dirs": {
+    "aerial_image": "./img/resource/aerial_image/CLAHE_with_WB_adjust/smoothed",
+    "ground_truth": "./img/resource/ground_truth",
+    "logging": "./tmp/detect_building_damage/new_canny_params"
+  },
+  "options": {
+    "experiments": [
+      1
+    ],
+    "procedures": [
+      "edge_pixel_classify"
+    ],
+    "ground_truth": [
+      "GT_BOTH"
+    ]
+  },
+  "parameters": [
+    {
+      "experiment_num": 1,
+      "edge_pixel_classify": {
+        "sigma": 0.5,
+        "thresholds": [0, 1],
+        "skip_find_params": true
+      }
+    }
+  ]
+}
