@@ -354,7 +354,9 @@ class ImageLogger:
                 img = self.get_psuedo_color_img( img )
             
             elif cmap != "gray":
-                img = (colormap.get_cmap( cmap )( img ) * 255).astype( np.uint8 )[:, :, [2, 1, 0]]
+                img = img.astype(np.float)
+                img /= img.max()
+                img = (colormap.get_cmap(cmap)(img) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
     
         # Generate file path
         save_path = self._generate_save_path(

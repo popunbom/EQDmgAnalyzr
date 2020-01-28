@@ -7,12 +7,14 @@
 
 
 import platform
+from os.path import join
 
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from os import path
 
+from imgproc.utils import imread_with_error
 from utils.assertion import SAME_SHAPE_ASSERT, NDARRAY_ASSERT
 from utils.logger import ImageLogger
 
@@ -126,36 +128,67 @@ def detect_road_damage_2(result, road_mask, logger=None):
         logger.logging_img(dist, "distance_visualized", cmap="jet")
     
     result_extracted = dist * road_mask
-    
+
     if logger:
         logger.logging_img(result_extracted, "result_extracted")
-        
+
     return result_extracted
 
 
+def do_experiment():
+    ROOT_RESULT = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    ROOT_ROAD_MASK = "img/resource/road_mask"
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        result = imread_with_error(
+            join(
+                ROOT_RESULT,
+                f"aerial_roi{exp_num}/result.png"
+            )
+        )
+        
+        road_mask = imread_with_error(
+            join(
+                ROOT_ROAD_MASK,
+                f"aerial_roi{exp_num}.png"
+            ),
+            cv2.IMREAD_GRAYSCALE
+        ).astype(bool)
+        
+        result = ~np.all(result == 0, axis=2)
+        
+        logger = ImageLogger(
+            base_path="./tmp/detect_road_damage_v2",
+            prefix=f"aerial_roi{exp_num}"
+        )
+        
+        # detect_road_damage_1(result, road_mask, logger)
+        detect_road_damage_2(result, road_mask, logger)
+
+
 if __name__ == '__main__':
-    
-    DIR_ROAD_MASK = "./img/resource/road_mask"
-    FILE_ROAD_MASK = "aerial_roi1.png"
-    
-    # PATH_RESULT = "./tmp/find_threshold/20191115_134949_aerial_roi1_raw_denoised_clipped/result_morphology.tiff"
-    # PATH_RESULT = "./tmp/find_threshold/20191121_165941_aerial_roi2_raw/result_morphology.tiff"
-    # PATH_RESULT = "./tmp/notebooks/EdgeAngleVariance+HPF/20190924_224939/Thresh - Sub(AngleVar, HPF).tiff"
-    PATH_RESULT = "./tmp/notebooks/EdgeAngleVariance+HPF/20191206_144540/System - Result(Merged).png"
-    
-    road_mask = cv2.imread(
-        path.join(DIR_ROAD_MASK, FILE_ROAD_MASK),
-        cv2.IMREAD_GRAYSCALE
-    ).astype(bool)
-    
-    result = cv2.imread(
-        PATH_RESULT,
-        cv2.IMREAD_UNCHANGED
-    ).astype(bool)
-    
-    logger = ImageLogger(
-        base_path="./tmp/detect_road_damage"
-    )
-    
-    # detect_road_damage_1(result, road_mask, logger)
-    detect_road_damage_2(result, road_mask, logger)
+    do_experiment()
+    # DIR_ROAD_MASK = "./img/resource/road_mask"
+    # FILE_ROAD_MASK = "aerial_roi1.png"
+    #
+    # # PATH_RESULT = "./tmp/find_threshold/20191115_134949_aerial_roi1_raw_denoised_clipped/result_morphology.tiff"
+    # # PATH_RESULT = "./tmp/find_threshold/20191121_165941_aerial_roi2_raw/result_morphology.tiff"
+    # # PATH_RESULT = "./tmp/notebooks/EdgeAngleVariance+HPF/20190924_224939/Thresh - Sub(AngleVar, HPF).tiff"
+    # PATH_RESULT = "./tmp/notebooks/EdgeAngleVariance+HPF/20191206_144540/System - Result(Merged).png"
+    #
+    # road_mask = cv2.imread(
+    #     path.join(DIR_ROAD_MASK, FILE_ROAD_MASK),
+    #     cv2.IMREAD_GRAYSCALE
+    # ).astype(bool)
+    #
+    # result = cv2.imread(
+    #     PATH_RESULT,
+    #     cv2.IMREAD_UNCHANGED
+    # ).astype(bool)
+    #
+    # logger = ImageLogger(
+    #     base_path="./tmp/detect_road_damage"
+    # )
+    #
+    # # detect_road_damage_1(result, road_mask, logger)
+    # detect_road_damage_2(result, road_mask, logger)

@@ -9,9 +9,10 @@
 import json
 import re
 import sys
-from os import listdir, path
-from os.path import isdir
+from os import listdir, path, walk
+from os.path import isdir, join, exists
 from pathlib import Path
+from pprint import pprint
 from textwrap import dedent
 import pyperclip
 
@@ -158,7 +159,7 @@ def gen_result(exp_num, exp_name):
     return result
 
 
-if __name__ == '__main__':
+def do_gen_result():
     EXP_NAMES = [
         "edge_angle_variance_with_hpf",
         "edge_angle_variance",
@@ -174,13 +175,13 @@ if __name__ == '__main__':
         print(results)
         pyperclip.copy(results)
         eprint("Copied to clipboard")
-
+    
     else:
         while True:
             line = input(dedent(f"""
-            ROOT_PATH: {RESULT_ROOT_DIR}
-            EXP NUM? >
-            """).rstrip("\n"))
+                ROOT_PATH: {RESULT_ROOT_DIR}
+                EXP NUM? >
+                """).rstrip("\n"))
             if line:
                 exp_num = int(line)
                 results = "\n".join([gen_result(exp_num, exp_name) for exp_name in EXP_NAMES])
@@ -189,3 +190,55 @@ if __name__ == '__main__':
                 eprint("Copied to clipboard")
             else:
                 break
+
+
+def gen_result_v2():
+    RESULT_ROOT_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    
+    GT_TYPES = ["GT_BOTH", "GT_RED", "GT_ORANGE"]
+    
+    METHODS = [
+        "MEAN_SHIFT_AND_ANGLE_VARIANCE_AND_PIXEL_CLASSIFY",
+        "MEAN_SHIFT_AND_ANGLE_VARIANCE",
+        "MEAN_SHIFT_AND_PIXEL_CLASSIFY",
+        "ANGLE_VARIANCE_AND_PIXEL_CLASSIFY",
+        "MEAN_SHIFT",
+        "ANGLE_VARIANCE",
+        "PIXEL_CLASSIFY"
+    ]
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        p = join(
+            RESULT_ROOT_DIR,
+            f"aerial_roi{exp_num}/evaluation/scores.json"
+        )
+        
+        if not exists(p):
+            eprint("File not exists:", p)
+            continue
+        
+        j = json.load(open(p))
+        
+        for method in METHODS:
+            for gt_type in GT_TYPES:
+                # for gt_type, vv in v.items():
+                s = j[method][gt_type]["Score"]
+                print(", ".join([
+                    str(exp_num),
+                    gt_type,
+                    method,
+                    *["{:.04f}".format(s[k]) for k in [
+                        "Accuracy",
+                        "Recall",
+                        "Precision",
+                        "Specificity",
+                        "F Score",
+                        "Missing-Rate",
+                        "Wrong-Rate"
+                    ]]
+                ]))
+
+
+if __name__ == '__main__':
+    # do_gen_result()
+    gen_result_v2()

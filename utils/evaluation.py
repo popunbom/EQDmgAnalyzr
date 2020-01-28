@@ -58,10 +58,10 @@ def evaluation_by_confusion_matrix( result, ground_truth ):
 
     Returns
     -------
-    confusion_matrix, metrics : tuple
-        混同行列と各種スコアの tuple
+    tuple
+        混同行列と各種スコアのタプル: (confusion_matrix, metrics)
     """
-    NDARRAY_ASSERT( result, dtype=bool )
+    NDARRAY_ASSERT(result, dtype=bool)
     NDARRAY_ASSERT( ground_truth, dtype=bool )
     SAME_SHAPE_ASSERT( result, ground_truth, ignore_ndim=True )
     
