@@ -41,21 +41,22 @@ ROOT_DIR_SRC = "./img/resource/aerial_image/CLAHE_with_WB_adjust"
 ROOT_DIR_ROAD_MASK = "./img/resource/road_mask"
 
 
-def hsv_blending(bg_img, fg_img):
+def hsv_blending(bg_img, fg_img, v_scale=None):
     NDARRAY_ASSERT(fg_img, ndim=3)
     SAME_SHAPE_ASSERT(bg_img, fg_img)
     
     if bg_img.ndim == 3:
-        cv2.cvtColor(
+        bg_img = cv2.cvtColor(
             bg_img,
             cv2.COLOR_BGR2GRAY
         )
+    
     if bg_img.ndim == 2:
-        cv2.cvtColor(
+        bg_img = cv2.cvtColor(
             bg_img,
             cv2.COLOR_GRAY2BGR
         )
-        
+    
     bg_hsv, fg_hsv = [
         cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         for img in [bg_img, fg_img]
@@ -63,6 +64,11 @@ def hsv_blending(bg_img, fg_img):
     
     b_h, b_s, b_v = [bg_hsv[:, :, i] for i in range(3)]
     f_h, f_s, f_v = [fg_hsv[:, :, i] for i in range(3)]
+    
+    if v_scale is not None:
+        fg_mask = np.all(fg_img == C_BLACK, axis=2)
+        
+        b_v[fg_mask == True] = (b_v[fg_mask == True].astype(np.float32) * v_scale).astype(np.uint8)
     
     dst = cv2.cvtColor(
         np.dstack(
@@ -72,8 +78,22 @@ def hsv_blending(bg_img, fg_img):
     )
     
     return dst
+
+
+def mask_to_gray(img, mask):
+    NDARRAY_ASSERT(img, ndim=3, dtype=np.uint8)
+    NDARRAY_ASSERT(mask, ndim=2, dtype=np.bool)
+    SAME_SHAPE_ASSERT(img, mask, ignore_ndim=True)
     
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
+    hsv[mask == False, 1] = 0
+    
+    dst = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    
+    return dst
+
+
 def merge_arrays_by_mask(array_1, array_2, mask):
     NDARRAY_ASSERT(mask, ndim=2, dtype=np.bool)
     SAME_NDIM_ASSERT(array_1, array_2)
@@ -912,7 +932,7 @@ def gen_result_road_damage():
         dst = hsv_blending(src, result)
         
         dst[road_mask == False] = src_gs[road_mask == False]
-        
+
         imwrite_with_error(
             join(
                 d,
@@ -922,8 +942,109 @@ def gen_result_road_damage():
         )
 
 
+def gen_source_overlay():
+    ROOT_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/resource"
+    
+    SRC_DIR = join(ROOT_DIR, "aerial_image")
+    GT_DIR = join(ROOT_DIR, "ground_truth")
+    ROAD_MASK_DIR = join(ROOT_DIR, "road_mask")
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        
+        eprint("Experiment Num:", exp_num)
+        
+        bg, fg, road_mask = [
+            imread_with_error(
+                join(root_dir, f"aerial_roi{exp_num}.png")
+            )
+            for root_dir in [
+                SRC_DIR,
+                GT_DIR,
+                ROAD_MASK_DIR
+            ]
+        ]
+        
+        road_mask[:, :, [0, 2]] = [0, 0]
+        
+        gt_overlay = hsv_blending(bg, fg)
+        
+        imwrite_with_error(
+            join(
+                GT_DIR,
+                f"aerial_roi{exp_num}_overlay.png"
+            ),
+            gt_overlay
+        )
+        
+        road_mask_overlay = hsv_blending(bg, road_mask)
+        
+        imwrite_with_error(
+            join(
+                ROAD_MASK_DIR,
+                f"aerial_roi{exp_num}_overlay.png"
+            ),
+            road_mask_overlay
+        )
+
+
+def gen_result_overlay():
+    ROOT_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img"
+    
+    SRC_DIR = join(ROOT_DIR, "resource/aerial_image")
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        
+        eprint("Experiment Num:", exp_num)
+        
+        bg = imread_with_error(
+            join(
+                SRC_DIR,
+                f"aerial_roi{exp_num}.png"
+            )
+        )
+        
+        building_damage = imread_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/result.png"
+            )
+        )
+        
+        building_damage_overlay = hsv_blending(bg, building_damage, v_scale=0.6)
+        
+        imwrite_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/result_overlay.png"
+            ),
+            building_damage_overlay
+        )
+        
+        road_damage = imread_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/road_damage/thresholded.png"
+            )
+        )
+        
+        # White -> Red
+        road_damage[:, :, [0, 1]] = [0, 0]
+        
+        road_damage_overlay = hsv_blending(bg, road_damage)
+        
+        imwrite_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/road_damage/result_overlay.png"
+            ),
+            road_damage_overlay
+        )
+
+
 if __name__ == '__main__':
     # gen_study_data()
     # only_overlay_image()
-    eval_by_utilize_methods()
-    gen_result_road_damage()
+    # eval_by_utilize_methods()
+    # gen_result_road_damage()
+    # gen_source_overlay()
+    gen_result_overlay()
