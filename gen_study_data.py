@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 from matplotlib import cm
 
+from imgproc.edge import EdgeProcedures
 from imgproc.utils import imread_with_error, imwrite_with_error
 from utils.assertion import TYPE_ASSERT, SAME_SHAPE_ASSERT, SAME_NDIM_ASSERT, NDARRAY_ASSERT
 from utils.common import eprint
@@ -1029,9 +1030,9 @@ def gen_result_overlay():
         
         # White -> Red
         road_damage[:, :, [0, 1]] = [0, 0]
-        
+
         road_damage_overlay = hsv_blending(bg, road_damage)
-        
+
         imwrite_with_error(
             join(
                 ROOT_DIR,
@@ -1041,10 +1042,48 @@ def gen_result_overlay():
         )
 
 
+def gen_edge_images():
+    IMG_PATH = "img/resource/aerial_image/aerial_roi1.png"
+    SAVE_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/figs"
+    
+    # ROI: X, Y, W, H
+    X, Y, W, H = 190, 140, 200, 200
+    
+    img = imread_with_error(IMG_PATH)
+    
+    inst = EdgeProcedures(img)
+    
+    G = inst.edge_magnitude
+    G = (cm.get_cmap("jet")(G) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+    
+    A = inst.get_angle_colorized_img(max_intensity=True)
+    A_with_magnitude = inst.get_angle_colorized_img()
+    
+    print(G.shape, G.dtype, G.min(), G.max())
+    print(A.shape, A.dtype, A.min(), A.max())
+    
+    img = img[Y:Y + H, X:X + W, :]
+    G = G[Y:Y + H, X:X + W, :]
+    A = A[Y:Y + H, X:X + W, :]
+    A_with_magnitude = A_with_magnitude[Y:Y + H, X:X + W, :]
+    
+    write_images(
+        SAVE_DIR,
+        [
+            ("edge_input", img),
+            ("edge_magnitude", G),
+            ("edge_angle", A),
+            ("edge_angle_with_magnitude", A_with_magnitude)
+        ],
+        prefix=""
+    )
+
+
 if __name__ == '__main__':
     # gen_study_data()
     # only_overlay_image()
     # eval_by_utilize_methods()
     # gen_result_road_damage()
     # gen_source_overlay()
-    gen_result_overlay()
+    # gen_result_overlay()
+    gen_edge_images()
