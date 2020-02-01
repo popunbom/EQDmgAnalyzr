@@ -7,7 +7,7 @@
 
 
 import platform
-from os.path import join
+from os.path import join, exists
 
 import cv2
 import numpy as np
@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from os import path
 
 from imgproc.utils import imread_with_error
-from utils.assertion import SAME_SHAPE_ASSERT, NDARRAY_ASSERT
+from utils.assertion import SAME_SHAPE_ASSERT, NDARRAY_ASSERT, TYPE_ASSERT
 from utils.logger import ImageLogger
 
 
@@ -80,7 +80,7 @@ def detect_road_damage_1(result, road_mask, logger=None):
     return dist
 
 
-def detect_road_damage_2(result, road_mask, logger=None):
+def detect_road_damage_2(result, road_mask, vegetation_mask=None, logger=None):
     """
     建物被害の結果から道路上の被害抽出を行う
     
@@ -108,10 +108,14 @@ def detect_road_damage_2(result, road_mask, logger=None):
     -----
     - `result` と `road_mask` は同じ大きさである必要がある
     """
-    
     NDARRAY_ASSERT(result, ndim=2, dtype=np.bool)
     NDARRAY_ASSERT(road_mask, ndim=2, dtype=np.bool)
     SAME_SHAPE_ASSERT(result, road_mask)
+    TYPE_ASSERT(vegetation_mask, [None, np.ndarray])
+    
+    if vegetation_mask is not None:
+        NDARRAY_ASSERT(vegetation_mask, ndim=2, dtype=np.bool)
+        result = result & ~vegetation_mask
     
     result = (result * 255).astype(np.uint8)
     
@@ -123,14 +127,15 @@ def detect_road_damage_2(result, road_mask, logger=None):
     # FIXED: Normalize
     # dist = (dist / dist.max() * 255).astype(np.uint8)
     
+    logger_sub_path = "" if vegetation_mask is None else "removed_vegetation"
     if logger:
-        logger.logging_img(dist, "distance", cmap="gray")
-        logger.logging_img(dist, "distance_visualized", cmap="jet")
+        logger.logging_img(dist, "distance", cmap="gray", sub_path=logger_sub_path)
+        logger.logging_img(dist, "distance_visualized", cmap="jet", sub_path=logger_sub_path)
     
     result_extracted = dist * road_mask
 
     if logger:
-        logger.logging_img(result_extracted, "result_extracted")
+        logger.logging_img(result_extracted, "result_extracted", sub_path=logger_sub_path)
 
     return result_extracted
 
@@ -138,6 +143,7 @@ def detect_road_damage_2(result, road_mask, logger=None):
 def do_experiment():
     ROOT_RESULT = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
     ROOT_ROAD_MASK = "img/resource/road_mask"
+    ROOT_VEG_MASK = "img/resource/vegetation_mask"
     
     for exp_num in [1, 2, 3, 5, 9]:
         result = imread_with_error(
@@ -146,6 +152,18 @@ def do_experiment():
                 f"aerial_roi{exp_num}/result.png"
             )
         )
+        
+        path_veg_mask = join(
+            ROOT_VEG_MASK,
+            f"aerial_roi{exp_num}.png"
+        )
+        
+        vegetation_mask = None
+        if exists(path_veg_mask):
+            vegetation_mask = imread_with_error(
+                path_veg_mask,
+                cv2.IMREAD_GRAYSCALE
+            ).astype(bool)
         
         road_mask = imread_with_error(
             join(
@@ -163,7 +181,10 @@ def do_experiment():
         )
         
         # detect_road_damage_1(result, road_mask, logger)
-        detect_road_damage_2(result, road_mask, logger)
+        detect_road_damage_2(result, road_mask, logger=logger)
+        
+        if vegetation_mask is not None:
+            detect_road_damage_2(result, road_mask, vegetation_mask=vegetation_mask, logger=logger)
 
 
 if __name__ == '__main__':
