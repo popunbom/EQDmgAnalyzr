@@ -39,6 +39,7 @@ ROOT_DIR_RESULT = "./tmp/detect_building_damage/change_window_size"
 ROOT_DIR_GT = "./img/resource/ground_truth"
 ROOT_DIR_SRC = "./img/resource/aerial_image/CLAHE_with_WB_adjust"
 ROOT_DIR_ROAD_MASK = "./img/resource/road_mask"
+ROOT_DIR_VEG_MASK = "./img/resource/vegetation_mask"
 
 
 def hsv_blending(bg_img, fg_img):
@@ -801,60 +802,93 @@ def eval_by_utilize_methods():
             )
         )
         
+        # Use Vegetation Mask
+        OPTIONS = ["NORMAL"]
+        
+        path_vegetation_mask = join(
+            ROOT_DIR_VEG_MASK,
+            f"aerial_roi{exp_num}.png"
+        )
+        vegetation_mask = None
+        
+        if exists(path_vegetation_mask):
+            vegetation_mask = imread_with_error(
+                path_vegetation_mask,
+                cv2.IMREAD_GRAYSCALE
+            ).astype(bool)
+            OPTIONS.append("REMOVED_VEGETATION")
+            
+        
         scores = dict()
         
-        for name, channels in SPLIT_PATTERNS.items():
-            eprint("Evaluation:", name)
-            result = np.zeros(result_src.shape[:2], dtype=np.int16)
-            
-            for channel in channels:
-                result += (result_src[:, :, channel] != 0)
-            
-            result = result.astype(bool)
-            
-            imwrite_with_error(
-                join(result_dir, name.replace(" & ", "_and_") + ".png"),
-                (result * 255).astype(np.uint8)
-            )
-            
-            scores[name] = dict()
-            
-            for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]:
-                ground_truth = None
+        for option in OPTIONS:
+        
+            for name, channels in SPLIT_PATTERNS.items():
+                eprint("Evaluation:", name)
                 
-                if gt_type == "GT_BOTH":
-                    ground_truth = np.all(
-                        (gt_src == C_RED) | (gt_src == C_ORANGE),
-                        axis=2
-                    )
-                elif gt_type == "GT_RED":
-                    ground_truth = np.all(
-                        gt_src == C_RED,
-                        axis=2
-                    )
-                elif gt_type == "GT_ORANGE":
-                    ground_truth = np.all(
-                        gt_src == C_ORANGE,
-                        axis=2
+                result = np.zeros(result_src.shape[:2], dtype=np.int16)
+                
+                for channel in channels:
+                    result += (result_src[:, :, channel] != 0)
+
+                result = result.astype(bool)
+
+                if option == "NORMAL":
+                    save_dir = result_dir
+                elif option == "REMOVED_VEGETATION":
+                    result = result & ~vegetation_mask
+                    save_dir = join(
+                        result_dir,
+                        "removed_vegetation"
                     )
                 
-                cm, metrics = evaluation_by_confusion_matrix(
-                    result,
-                    ground_truth
+                if not exists(save_dir):
+                    makedirs(save_dir)
+    
+                imwrite_with_error(
+                    join(save_dir, name.replace(" & ", "_and_") + ".png"),
+                    (result * 255).astype(np.uint8)
                 )
                 
-                scores[name][gt_type] = {
-                    "Confusion Matrix": cm,
-                    "Score"           : metrics
-                }
-        
-        json.dump(
-            scores,
-            open(join(result_dir, "scores.json"), "w"),
-            ensure_ascii=False,
-            sort_keys=True,
-            indent="\t"
-        )
+                scores[name] = dict()
+                
+                for gt_type in ["GT_BOTH", "GT_ORANGE", "GT_RED"]:
+                    ground_truth = None
+                    
+                    if gt_type == "GT_BOTH":
+                        ground_truth = np.all(
+                            (gt_src == C_RED) | (gt_src == C_ORANGE),
+                            axis=2
+                        )
+                    elif gt_type == "GT_RED":
+                        ground_truth = np.all(
+                            gt_src == C_RED,
+                            axis=2
+                        )
+                    elif gt_type == "GT_ORANGE":
+                        ground_truth = np.all(
+                            gt_src == C_ORANGE,
+                            axis=2
+                        )
+                    
+                    cm, metrics = evaluation_by_confusion_matrix(
+                        result,
+                        ground_truth
+                    )
+                    
+                    scores[name][gt_type] = {
+                        "Confusion Matrix": cm,
+                        "Score"           : metrics
+                    }
+            
+            
+            json.dump(
+                scores,
+                open(join(save_dir, "scores.json"), "w"),
+                ensure_ascii=False,
+                sort_keys=True,
+                indent="\t"
+            )
 
 
 def gen_result_road_damage():
@@ -922,8 +956,79 @@ def gen_result_road_damage():
         )
 
 
+def eval_road_damage():
+    ROOT_DIR_RESULT = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        
+        eprint(dedent(f"""
+            Experiment Num: {exp_num}
+        """))
+
+        road_mask = imread_with_error(
+            join(
+                ROOT_DIR_ROAD_MASK,
+                f"aerial_roi{exp_num}.png"
+            ),
+            cv2.IMREAD_GRAYSCALE
+        ).astype(bool)
+
+        # GT: GT_BOTH
+        ground_truth = imread_with_error(
+            join(
+                ROOT_DIR_GT,
+                f"aerial_roi{exp_num}.png"
+            ),
+            cv2.IMREAD_GRAYSCALE
+        ).astype(bool)
+        
+        result_dir = join(
+            ROOT_DIR_RESULT,
+            f"aerial_roi{exp_num}/road_damage"
+        )
+        
+        result_dirs = [result_dir]
+        
+        if exists(join(result_dir, "removed_vegetation")):
+            result_dirs.append(
+                join(result_dir, "removed_vegetation")
+            )
+            
+        for result_dir in result_dirs:
+            result = imread_with_error(
+                join(result_dir, "thresholded.png"),
+                cv2.IMREAD_GRAYSCALE
+            ).astype(bool)
+            
+            result = result[road_mask == True]
+            ground_truth_masked = ground_truth[road_mask == True]
+            # ground_truth[road_mask == False] = False
+            
+            cm, metrics = evaluation_by_confusion_matrix(
+                result,
+                ground_truth_masked
+            )
+            
+            result = {
+                "Confusion Matrix": cm,
+                "Score": metrics
+            }
+            
+            json.dump(
+                result,
+                open(
+                    join(result_dir, "scores.json"),
+                    "w"
+                ),
+                ensure_ascii=False,
+                sort_keys=True,
+                indent="\t"
+            )
+    
+    
 if __name__ == '__main__':
     # gen_study_data()
     # only_overlay_image()
-    eval_by_utilize_methods()
-    gen_result_road_damage()
+    # gen_result_road_damage()
+    # eval_by_utilize_methods()
+    eval_road_damage()
