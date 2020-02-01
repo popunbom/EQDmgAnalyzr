@@ -210,35 +210,94 @@ def gen_result_v2():
     for exp_num in [1, 2, 3, 5, 9]:
         p = join(
             RESULT_ROOT_DIR,
-            f"aerial_roi{exp_num}/evaluation/scores.json"
+            f"aerial_roi{exp_num}/evaluation"
         )
         
-        if not exists(p):
-            eprint("File not exists:", p)
-            continue
+        jsons = list()
         
-        j = json.load(open(p))
+        jsons.append(
+            json.load(open(join(p, "scores.json")))
+        )
+        if exists(join(p, "removed_vegetation/scores.json")):
+            jsons.append(
+                json.load(
+                    open(
+                        join(p, "removed_vegetation/scores.json")
+                    )
+                )
+            )
         
-        for method in METHODS:
-            for gt_type in GT_TYPES:
-                # for gt_type, vv in v.items():
-                s = j[method][gt_type]["Score"]
-                print(", ".join([
-                    str(exp_num),
-                    gt_type,
-                    method,
-                    *["{:.04f}".format(s[k]) for k in [
-                        "Accuracy",
-                        "Recall",
-                        "Precision",
-                        "Specificity",
-                        "F Score",
-                        "Missing-Rate",
-                        "Wrong-Rate"
-                    ]]
-                ]))
+        for i, j in enumerate(jsons):
+            exp_num = str(exp_num)
+            if i == 1:
+                exp_num = f"{exp_num}_WO_VEG"
+            for method in METHODS:
+                for gt_type in GT_TYPES:
+                    # for gt_type, vv in v.items():
+                    s = j[method][gt_type]["Score"]
+                    print(", ".join([
+                        exp_num,
+                        gt_type,
+                        method,
+                        *["{:.04f}".format(s[k]) for k in [
+                            "Accuracy",
+                            "Recall",
+                            "Precision",
+                            "Specificity",
+                            "F Score",
+                            "Missing-Rate",
+                            "Wrong-Rate"
+                        ]]
+                    ]))
 
+
+def gen_result_road_damage():
+    RESULT_ROOT_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        root_dir = join(
+            RESULT_ROOT_DIR,
+            f"aerial_roi{exp_num}/road_damage"
+        )
+        
+        json_paths = [
+            join(
+                root_dir,
+                "scores.json"
+            )
+        ]
+        if exists(join(root_dir, "removed_vegetation")):
+            json_paths.append(
+                join(
+                    root_dir,
+                    "removed_vegetation/scores.json"
+                )
+            )
+            
+        for json_path in json_paths:
+            j = json.load(open(json_path))
+            
+            exp_name = str(exp_num)
+            if "removed_vegetation" in json_path:
+                exp_name = f"{exp_num}_WO_VEG"
+
+            s = j["Score"]
+            print(", ".join([
+                exp_name,
+                *["{:.04f}".format(s[k]) for k in [
+                    "Accuracy",
+                    "Recall",
+                    "Precision",
+                    "Specificity",
+                    "F Score",
+                    "Missing-Rate",
+                    "Wrong-Rate"
+                ]]
+            ]))
+
+    
 
 if __name__ == '__main__':
     # do_gen_result()
-    gen_result_v2()
+    # gen_result_v2()
+    gen_result_road_damage()
