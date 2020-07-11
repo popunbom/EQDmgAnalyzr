@@ -40,9 +40,10 @@ ROOT_DIR_RESULT = "./tmp/detect_building_damage/change_window_size"
 ROOT_DIR_GT = "./img/resource/ground_truth"
 ROOT_DIR_SRC = "./img/resource/aerial_image/CLAHE_with_WB_adjust"
 ROOT_DIR_ROAD_MASK = "./img/resource/road_mask"
+ROOT_DIR_VEG_MASK = "./img/resource/vegetation_mask"
 
 
-def hsv_blending(bg_img, fg_img, v_scale=None):
+def hsv_blending(bg_img, fg_img, bg_v_scale=None, fg_v_scale=None):
     NDARRAY_ASSERT(fg_img, ndim=3)
     SAME_SHAPE_ASSERT(bg_img, fg_img)
     
@@ -66,10 +67,32 @@ def hsv_blending(bg_img, fg_img, v_scale=None):
     b_h, b_s, b_v = [bg_hsv[:, :, i] for i in range(3)]
     f_h, f_s, f_v = [fg_hsv[:, :, i] for i in range(3)]
     
-    if v_scale is not None:
-        fg_mask = np.all(fg_img == C_BLACK, axis=2)
+    if bg_v_scale is not None:
+        fg_not_masked = np.all(fg_img == C_BLACK, axis=2)
         
-        b_v[fg_mask == True] = (b_v[fg_mask == True].astype(np.float32) * v_scale).astype(np.uint8)
+        b_v = b_v.astype(np.float32)
+        
+        b_v[fg_not_masked == True] = (b_v[fg_not_masked == True] * bg_v_scale)
+        
+        # Clip value
+        b_v[b_v > 255.0] = 255
+        
+        # Cast Type
+        b_v = b_v.astype(np.uint8)
+    
+    if fg_v_scale is not None:
+        fg_mask = ~np.all(fg_img == C_BLACK, axis=2)
+    
+        b_v = b_v.astype(np.float32)
+    
+        b_v[fg_mask == True] = (b_v[fg_mask == True] * fg_v_scale)
+    
+        # Clip value
+        b_v[b_v > 255.0] = 255
+    
+        # Cast Type
+        b_v = b_v.astype(np.uint8)
+        
     
     dst = cv2.cvtColor(
         np.dstack(
@@ -113,7 +136,6 @@ def merge_arrays_by_mask(array_1, array_2, mask):
     array_2[mask == False] = Z
     
     return array_1 + array_2
-
 
 
 def write_images(root_path, filenames_and_images, prefix="study"):
@@ -949,37 +971,55 @@ def gen_result_road_damage():
             cv2.IMREAD_GRAYSCALE
         ).astype(bool)
         
-        result = imread_with_error(
-            join(
-                d,
-                "result_extracted.tiff"
-            ),
-            cv2.IMREAD_UNCHANGED
-        )
-        
         src[road_mask == False] = [0, 0, 0]
         
-        result = (cm.get_cmap("jet")(
-            result / result.max()
-        ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+        result_paths = [d]
+        if exists(join(d, "removed_vegetation")):
+            result_paths.append(
+                join(d, "removed_vegetation")
+            )
         
-        dst = hsv_blending(src, result)
-        
-        dst[road_mask == False] = src_gs[road_mask == False]
-        
-        imwrite_with_error(
-            join(
-                d,
-                f"study_overlay.png"
-            ),
-            dst
-        )
+        for result_path in result_paths:
+            result = imread_with_error(
+                join(
+                    result_path,
+                    "result_extracted.tiff"
+                ),
+                cv2.IMREAD_UNCHANGED
+            )
+            
+            result = (cm.get_cmap("jet")(
+                result / result.max()
+            ) * 255).astype(np.uint8)[:, :, [2, 1, 0]]
+            
+            dst = hsv_blending(src, result)
+            
+            dst[road_mask == False] = src_gs[road_mask == False]
+            
+            imwrite_with_error(
+                join(
+                    result_path,
+                    f"study_overlay.png"
+                ),
+                dst
+            )
 
 
 def eval_road_damage():
-    ROOT_DIR_RESULT = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    ROOT_DIR_RESULT = "/Users/popunbom/.tmp/EQDmgAnalyzr/detect_road_damage_v2"
     
-    for exp_num in [1, 2, 3, 5, 9]:
+    dirs = [
+        join(ROOT_DIR_RESULT, d)
+        for d in listdir(ROOT_DIR_RESULT)
+        if isdir(join(ROOT_DIR_RESULT, d))
+    ]
+    
+    for d in dirs:
+        print(d)
+        exp_num, = re.match(
+            r".*aerial_roi([0-9]).*",
+            d
+        ).groups()
         
         eprint(dedent(f"""
             Experiment Num: {exp_num}
@@ -1002,16 +1042,11 @@ def eval_road_damage():
             cv2.IMREAD_GRAYSCALE
         ).astype(bool)
         
-        result_dir = join(
-            ROOT_DIR_RESULT,
-            f"aerial_roi{exp_num}/road_damage"
-        )
+        result_dirs = [d]
         
-        result_dirs = [result_dir]
-        
-        if exists(join(result_dir, "removed_vegetation")):
+        if exists(join(d, "removed_vegetation")):
             result_dirs.append(
-                join(result_dir, "removed_vegetation")
+                join(d, "removed_vegetation")
             )
             
         for result_dir in result_dirs:
@@ -1114,7 +1149,7 @@ def gen_result_overlay():
             )
         )
         
-        building_damage_overlay = hsv_blending(bg, building_damage, v_scale=0.6)
+        building_damage_overlay = hsv_blending(bg, building_damage, bg_v_scale=0.6)
         
         imwrite_with_error(
             join(
@@ -1142,6 +1177,27 @@ def gen_result_overlay():
                 f"result/aerial_roi{exp_num}/road_damage/result_overlay.png"
             ),
             road_damage_overlay
+        )
+        
+        
+        road_damage_wo_veg = imread_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/road_damage/removed_vegetation/thresholded.png"
+            )
+        )
+        
+        # White -> Red
+        road_damage_wo_veg[:, :, [0, 1]] = [0, 0]
+
+        road_damage_wo_veg_overlay = hsv_blending(bg, road_damage_wo_veg)
+
+        imwrite_with_error(
+            join(
+                ROOT_DIR,
+                f"result/aerial_roi{exp_num}/road_damage/removed_vegetation/result_overlay.png"
+            ),
+            road_damage_wo_veg_overlay
         )
 
 
@@ -1182,11 +1238,94 @@ def gen_edge_images():
     )
 
 
+def apply_vegetation_mask():
+    ROOT_DIR_RESULT = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img"
+    ROOT_DIR_VEG = "img/resource/vegetation_mask"
+    ROOT_DIR_SRC = join(ROOT_DIR_RESULT, "resource/aerial_image")
+    
+    for exp_num in [1, 2, 3, 5, 9]:
+        file_name = f"aerial_roi{exp_num}.png"
+        
+        result_dir = join(ROOT_DIR_RESULT, f"result/aerial_roi{exp_num}")
+        save_dir = join(result_dir, "extract_vegetation")
+
+        if not exists(save_dir):
+            makedirs(save_dir)
+        
+        src = imread_with_error(
+            join(ROOT_DIR_SRC, file_name)
+        )
+        
+        veg_mask = imread_with_error(
+            join(ROOT_DIR_VEG, file_name),
+        )
+        
+        result = imread_with_error(
+            join(result_dir, "result.png")
+        )
+
+        imwrite_with_error(
+            join(
+                save_dir,
+                "thresholded.png"
+            ),
+            veg_mask
+        )
+        
+        # WHITE -> GREEN
+        veg_mask[:, :, [0, 2]] = [0, 0]
+        
+        veg_overlay = hsv_blending(
+            bg_img=src,
+            fg_img=veg_mask,
+            bg_v_scale=0.6,
+            fg_v_scale=1.5,
+        )
+        
+        imwrite_with_error(
+            join(
+                save_dir,
+                "vegetation_overlay.png"
+            ),
+            veg_overlay
+        )
+        
+        # Result - Vegetation
+        veg_mask_bin = veg_mask[:, :, 1].astype(bool)
+        result[veg_mask_bin == True] = [0, 0, 0]
+        
+        imwrite_with_error(
+            join(
+                result_dir,
+                "result_removed_vegetation.png"
+            ),
+            result
+        )
+        
+        # Overlay result
+        
+        result_overlay = hsv_blending(
+            bg_img=src,
+            fg_img=result,
+            bg_v_scale=0.6
+        )
+        
+        imwrite_with_error(
+            join(
+                result_dir,
+                "result_overlay_removed_vegetation.png"
+            ),
+            result_overlay
+        )
+    
+
 if __name__ == '__main__':
     # gen_study_data()
     # only_overlay_image()
     # gen_result_road_damage()
     # eval_by_utilize_methods()
+    # eval_road_damage()
     # gen_source_overlay()
-    eval_road_damage()
-    gen_edge_images()
+    # gen_edge_images()
+    # apply_vegetation_mask()
+    gen_result_overlay()

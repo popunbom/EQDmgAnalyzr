@@ -252,24 +252,31 @@ def gen_result_v2():
 
 
 def gen_result_road_damage():
-    RESULT_ROOT_DIR = "/Users/popunbom/Google Drive/情報学部/研究/修士/最終発表/Thesis/img/result"
+    ROOT_DIR_RESULT = "/Users/popunbom/.tmp/EQDmgAnalyzr/detect_road_damage_v2"
     
-    for exp_num in [1, 2, 3, 5, 9]:
-        root_dir = join(
-            RESULT_ROOT_DIR,
-            f"aerial_roi{exp_num}/road_damage"
-        )
+    dirs = sorted([
+        join(ROOT_DIR_RESULT, d)
+        for d in listdir(ROOT_DIR_RESULT)
+        if isdir(join(ROOT_DIR_RESULT, d))
+    ])
+    
+    for d in dirs:
+        exp_num, = re.match(
+            r".*aerial_roi([0-9]).*",
+            d
+        ).groups()
+        
         
         json_paths = [
             join(
-                root_dir,
+                d,
                 "scores.json"
             )
         ]
-        if exists(join(root_dir, "removed_vegetation")):
+        if exists(join(d, "removed_vegetation")):
             json_paths.append(
                 join(
-                    root_dir,
+                    d,
                     "removed_vegetation/scores.json"
                 )
             )
