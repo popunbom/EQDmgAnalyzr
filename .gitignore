@@ -2,20 +2,6 @@
 # Created by https://www.gitignore.io/api/vim,linux,macos,emacs,python,opencv,pycharm,windows,virtualenv,jupyternotebooks,visualstudiocode
 # Edit at https://www.gitignore.io/?templates=vim,linux,macos,emacs,python,opencv,pycharm,windows,virtualenv,jupyternotebooks,visualstudiocode
 
-### Project Files ###
-test.py
-/error.log
-data
-data/
-img
-img/
-tmp
-notebooks
-# Sphinx
-docs/_source
-!docs/_source/conf.py
-!docs/_source/index.rst
-
 ### Emacs ###
 # -*- mode: gitignore; -*-
 *~
@@ -399,3 +385,19 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.gitignore.io/api/vim,linux,macos,emacs,python,opencv,pycharm,windows,virtualenv,jupyternotebooks,visualstudiocode
+
+
+### Project Files ###
+test.py
+/error.log
+data
+data/
+img
+img/
+tmp
+notebooks
+# Sphinx
+docs/_source
+!docs/Makefile
+!docs/_source/conf.py
+!docs/_source/index.rst
