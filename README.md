@@ -18,6 +18,10 @@
 source ./venv/bin/activate
 ```
 
+## Document
+
+- [docs/README.md](./docs/README.md)
+
 ## Author
 
 Fumiya Endou <endo.fumiya.14@shizuoka.ac.jp>
