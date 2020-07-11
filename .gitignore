@@ -11,6 +11,10 @@ img
 img/
 tmp
 notebooks
+# Sphinx
+docs/_source
+!docs/_source/conf.py
+!docs/_source/index.rst
 
 ### Emacs ###
 # -*- mode: gitignore; -*-
