@@ -397,7 +397,7 @@ img/
 tmp
 notebooks
 # Sphinx
-docs/_source
+docs/_source/*
 !docs/Makefile
 !docs/_source/conf.py
 !docs/_source/index.rst
