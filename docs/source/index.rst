@@ -10,6 +10,9 @@ Welcome to EQDmgAnalyzr's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   imgproc
+   utils
+
 
 Indices and tables
 ==================
