@@ -37,6 +37,10 @@ def imread_with_error(file_path, flags=cv2.IMREAD_COLOR):
         raise FileNotFoundError(
             file_path
         )
+    else:
+        eprint(
+            f" Load Image:", file_path
+        )
     
     return img
 
@@ -47,6 +51,10 @@ def imwrite_with_error(file_path, img, params=None):
     if not success:
         raise IOError(
             f"Failed to write image: {file_path}"
+        )
+    else:
+        eprint(
+            f"Write Image:", file_path
         )
     
 
